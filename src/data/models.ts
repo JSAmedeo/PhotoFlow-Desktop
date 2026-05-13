@@ -1,0 +1,98 @@
+// Core domain types for PhotoFlow Desktop.
+// All interfaces are shaped for future Phase 3+ wiring (real files, real ingest).
+
+export type ProcessingStatus = 'pending' | 'processing' | 'done' | 'warn' | 'error';
+export type PhotoFlag = 'none' | 'flagged' | 'rejected' | 'favorite';
+export type SessionStatus = 'active' | 'complete' | 'flagged' | 'archived';
+export type TabKey = 'gallery' | 'workshop' | 'streams' | 'print' | 'config';
+export type FilterKey = 'All' | 'Flagged' | 'Processed' | 'Pending';
+export type ImportStatus = 'queued' | 'importing' | 'complete' | 'skipped' | 'failed';
+
+export interface CaptureLocation {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+}
+
+export interface Session {
+  id: string;
+  sessionCode: string;
+  barcode: string;
+  captureLocationId: string;
+  captureLocationLabel: string; // pre-joined display string e.g. "Giraffes · XYZ-GIR"
+  handler: string;
+  createdAt: string;           // ISO string
+  updatedAt: string;
+  photoCount: number;
+  status: SessionStatus;
+  notes: string;
+  linkedSessionIds: string[];
+  tint: [string, string];      // display only — colored SVG tile gradient
+}
+
+export interface Photo {
+  id: string;
+  sessionId: string;
+  filename: string;
+  thumbnailUrl: string;
+  displayUrl: string;
+  beforeImageUrl: string;
+  afterImageUrl: string;
+  createdAt: string;           // ISO string
+  captureLocationId: string;
+  processingStatus: ProcessingStatus;
+  flag: PhotoFlag;
+  isFavorite: boolean;
+  isHidden: boolean;
+  operatorNotes: string;
+  enhanceVersion: string;
+  width: number;
+  height: number;
+  fileSizeMb: number;
+  fileFormat: string;
+  originalPath?: string;
+  importedFile?: ImportedFileMetadata;
+}
+
+export interface ImportedFileMetadata {
+  filename: string;
+  fileSize: number;
+  lastModified: number;
+  mimeType: string;
+}
+
+export interface ImportQueueItem {
+  id: string;
+  filename: string;
+  sessionId: string;
+  status: ImportStatus;
+  progress: number;
+  fileSize?: number;
+  lastModified?: number;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// Lightweight type used by the hourly folder list in the left panel
+export interface HourBucket {
+  h: string;       // "14:00"
+  label: string;   // "2 – 3 PM"
+  sub: string;     // "Afternoon"
+  count: number;
+  flagged: number;
+}
+
+export const HOUR_SHORT: Record<string, string> = {
+  '08:00': '8 AM',  '09:00': '9 AM',  '10:00': '10 AM', '11:00': '11 AM',
+  '12:00': '12 PM', '13:00': '1 PM',  '14:00': '2 PM',  '15:00': '3 PM',
+  '16:00': '4 PM',  '17:00': '5 PM',  '18:00': '6 PM',  '19:00': '7 PM',
+};
+
+export const TINTS: [string, string][] = [
+  ['#3a5f78', '#1f3a4a'], ['#5a4878', '#2f2a4a'], ['#4a7858', '#1f4a30'],
+  ['#785a48', '#4a2f1f'], ['#4f5878', '#2a304a'], ['#785063', '#4a2a36'],
+  ['#3a7868', '#1f4a3f'], ['#787858', '#4a4a2a'], ['#583a78', '#2f1f4a'],
+  ['#487868', '#1f4a3f'], ['#78483a', '#4a201f'], ['#3a4878', '#1f2a4a'],
+];
