@@ -38,11 +38,11 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 - **Runtime:** React 18 + TypeScript + Vite 6
 - **Icons:** lucide-react
 - **Styling:** Custom CSS design system via `src/styles/global.css` using CSS custom properties — **no Tailwind**
-- **Desktop shell:** Not added yet — Tauri or Electron planned for Phase 5
-- **Local data:** localStorage via layered repository (active since Phase 2) → SQLite planned for Phase 4+
+- **Desktop shell:** Tauri v2 foundation added in Phase 4
+- **Local data:** browser mode uses localStorage; Tauri desktop mode uses SQLite metadata via the Tauri SQL plugin
 - **Dev server:** `npm run dev` → localhost (port varies if 5173 is in use)
 - **Typecheck:** `npm run typecheck` (`tsc --noEmit`)
-- **No lint script yet** — planned for Phase 5
+- **Lint:** `npm run lint`
 
 ## Phase Status and Current Focus
 
@@ -50,37 +50,34 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 |-------|------|--------|
 | 1 | Visual MVP Shell | **COMPLETE** |
 | 2 | Local Data Foundation | **COMPLETE** |
-| 3 | Basic Photo Ingest | **CURRENT** |
-| 4 | Operator Correction Tools | Planned |
-| 5 | Demo Hardening + Desktop Packaging | Planned |
-| 6 | Platform Expansion | Future |
+| 3 | Basic Photo Ingest | **COMPLETE** |
+| 4 | Desktop Runtime Foundation | **COMPLETE** |
+| 5 | Local Database Foundation | **COMPLETE** |
+| 6 | Watched Folder Ingest | **CURRENT** |
 
-## Phase 3 — Current Focus
+## Phase 6 — Current Focus
 
-**Goal:** Allow a user to select local image files, import them into the active session, create real `Photo` records, show them in the existing Gallery and Workshop UI, and persist them across refreshes.
+**Goal:** Add desktop-only watched-folder ingest while preserving browser mode, manual import, Tauri managed file storage, and SQLite metadata.
 
-**Browser constraint:** This app is still a Vite browser app — no direct filesystem access. Use `<input type="file" multiple accept="image/*">` and object URLs. Do not add Electron/Tauri yet.
+**Runtime modes:**
+- Browser mode: `npm run dev`
+- Tauri desktop mode: `npm run tauri:dev`
 
-**What to build:**
-- `ImportQueueItem` model and `ImportStatus` type in `models.ts`
-- File picker wired to the active session
-- `Photo` records created from selected files (object URL as `displayUrl`/`thumbnailUrl`)
-- Imported photos shown in Gallery thumbnails and Workshop photo strip
-- Basic duplicate detection (filename match within session)
-- Import queue/status UI (queued → importing → complete/failed)
-- Import success and error feedback visible in the UI
-- Repository additions: `addPhoto()`, `addImportQueueItem()`, `updateImportStatus()`
-- Context additions: import queue state, `importPhotos()` action
-- localStorage persistence of photo metadata (not image binary — object URLs do not survive refresh; document this clearly)
-- README updated
+**Current persistence direction:**
+- Browser mode keeps localStorage metadata and base64/data URL imported images.
+- Tauri mode stores imported image files in managed app-local storage.
+- Tauri mode stores sessions/photos/import queue/app state metadata in SQLite.
+- UI components should not import Tauri SQL or filesystem APIs.
+- Watched-folder service owns file watching and hands stable candidates to the auto-import pipeline.
 
-**Hard rules for Phase 3:**
-- Do not build folder watchers, DSLR tethering, FTP ingest, or Canon integration
-- Do not add Electron or Tauri
-- Do not add AI/rembg processing
-- Do not add cloud upload
-- Do not add complex filesystem routing
-- Preserve all existing UI — no visual regressions
+**Hard rules for Phase 6:**
+- Build only the scoped watched-folder ingest workflow.
+- Do not build DSLR SDK, Canon SDK, tethering, FTP ingest, face matching, print package routing, archive movement, or source cleanup.
+- Do not add AI/rembg processing.
+- Do not add cloud upload.
+- Do not add print workflows.
+- Do not redesign the UI.
+- Preserve browser fallback mode.
 
 ## Design Source of Truth
 
@@ -94,7 +91,7 @@ Primary reference: `snapdesk.html` — open in browser to compare against the ru
 
 Do not delete or modify the handoff folder. Use it as ongoing visual direction for all phases.
 
-## Project Structure (as of Phase 2)
+## Project Structure (as of Phase 5)
 
 ```
 src/
@@ -119,8 +116,10 @@ src/
   data/
     models.ts        ← all TypeScript interfaces and types
     seedData.ts      ← 14 seed sessions, generated photos, 4 locations, 12 hour buckets
-    localStore.ts    ← raw localStorage helpers (only file that touches localStorage)
+    localStore.ts    ← raw browser localStorage helpers
     repository.ts    ← public data API (getSessions, updatePhotoMetadata, resetDemoData, etc.)
+    stores/          ← metadata store interface, browser store, SQLite store, store factory
+    db/              ← SQLite connection, schema, and migrations
   context/
     AppContext.tsx   ← data state only (sessions, selectedSessionId, photos, tab, hour, filter)
   styles/
@@ -132,19 +131,20 @@ public/
 design-handoff/      ← reference only, do not modify
 ```
 
-## Data Layer Architecture (Phase 2 — implemented)
+## Data Layer Architecture (Phase 5)
 
 ```
 Components / context
       ↓
   repository.ts      ← public API only
       ↓
-  localStore.ts      ← localStorage read/write (pf_ prefix)
+  metadata store     ← runtime-selected persistence adapter
       ↓
-  localStorage
+  browser: localStorage
+  tauri:   SQLite
 ```
 
-Components and context never call `localStore.ts` directly. `localStore.ts` never calls `repository.ts`.
+Components and context never call `localStore.ts`, SQLite, or Tauri filesystem APIs directly.
 
 ## Implemented Data Models
 
@@ -199,8 +199,8 @@ Do not build these unless explicitly scoped into a phase:
 - Multi-tenant SaaS features
 - Advanced analytics
 - AI processing pipeline
-- SQLite (Phase 4 earliest — Phase 3 uses browser file picker + object URLs)
-- Tauri/Electron desktop shell (Phase 5)
+- LocalStorage-to-SQLite migration
+- Folder watching
 
 ## Communication Style
 
@@ -212,3 +212,21 @@ When handing work back, include:
 - What to check visually
 - Known limitations
 - Recommended next step
+
+## Phase Checklist Rule
+
+Every development phase must include a dedicated phase checklist document.
+
+For each phase:
+
+- Create a checklist file named `PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Define the phase goal
+- Define what is in scope
+- Define what is out of scope
+- List implementation tasks
+- List validation commands
+- List acceptance criteria
+- Update the checklist as work progresses
+- Use the checklist as the final source of truth before declaring the phase complete
+
+No phase should be considered complete until its checklist has been reviewed and all required items are either completed or explicitly marked as deferred with a reason.

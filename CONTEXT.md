@@ -24,10 +24,10 @@ The correct framing is:
 |-------|------|--------|
 | 1 | Visual MVP Shell | **COMPLETE** |
 | 2 | Local Data Foundation | **COMPLETE** |
-| 3 | Basic Photo Ingest | **CURRENT** |
-| 4 | Operator Correction Tools | Planned |
-| 5 | Demo Hardening | Planned |
-| 6 | Platform Expansion | Future |
+| 3 | Basic Photo Ingest | **COMPLETE** |
+| 4 | Desktop Runtime Foundation | **COMPLETE** |
+| 5 | Local Database Foundation | **COMPLETE** |
+| 6 | Watched Folder Ingest | **CURRENT** |
 
 ## Phase 1 — Visual MVP Shell (COMPLETE)
 
@@ -65,19 +65,25 @@ Completed 2026-05-13. Replaced all hardcoded mock data with a real local data la
 **What was built:**
 - `src/data/models.ts` — TypeScript interfaces: `Session`, `Photo`, `CaptureLocation`, `HourBucket`, `ProcessingStatus`, `PhotoFlag`, `SessionStatus`, `TabKey`, `FilterKey`, plus `HOUR_SHORT` and `TINTS` constants
 - `src/data/seedData.ts` — 14 seed sessions across 4 capture locations, 4 photos per session, 12 hourly buckets; auto-seeds on first run
-- `src/data/localStore.ts` — raw localStorage helpers (`storeGet`, `storeSet`, `storeRemove`, `storeClearAll`); only file that touches `localStorage` directly; all keys prefixed `pf_`
+- `src/data/localStore.ts` — raw browser localStorage helpers (`storeGet`, `storeSet`, `storeRemove`, `storeClearAll`); all keys prefixed `pf_`
 - `src/data/repository.ts` — public data API: `initStore`, `getSessions`, `getPhotosBySessionId`, `updatePhotoMetadata`, `resetDemoData`, persisted UI state getters/setters; calls `seedStore()` automatically on first run
 - `src/context/AppContext.tsx` — React context + `useApp()` hook; owns all data state (`sessions`, `photos`, `locations`, `hours`, selection, `filter`, `isLoading`); App.tsx keeps UI-only state (zoom, split, activeTool)
 - `src/data/mockData.ts` — **deleted**
 
-**Data layer architecture:**
+**Original Phase 2 data layer architecture:**
 ```
 Components → AppContext → repository.ts → localStore.ts → localStorage
 ```
 
-**Persistence (Phase 2):** localStorage with `pf_` prefix. SQLite deferred to Phase 4+.
+**Current Phase 5 data layer architecture:**
+```
+Components → AppContext → repository.ts → metadata store
 
-## Phase 3 — Basic Photo Ingest (CURRENT)
+Browser metadata store → localStorage
+Tauri metadata store   → SQLite
+```
+
+## Phase 3 — Basic Photo Ingest (COMPLETE)
 
 Allow real local image files to be imported into sessions via the browser file picker.
 
@@ -98,7 +104,51 @@ Allow real local image files to be imported into sessions via the browser file p
 
 Still local-first. No cloud.
 
-## Phase 4 — Operator Correction Tools (Planned)
+## Phase 4 — Desktop Runtime Foundation (COMPLETE)
+
+Add Tauri v2 while preserving browser mode and the existing UI:
+
+- Tauri native window for desktop mode
+- Centralized browser vs Tauri runtime detection
+- Storage service boundary for imported photos
+- Browser fallback storage using base64/data URLs
+- Tauri managed app-local file storage for imported images
+- Photo source resolver so UI components receive displayable image URLs
+
+## Phase 5 — Local Database Foundation (COMPLETE)
+
+Add SQLite metadata persistence for Tauri desktop mode while preserving browser localStorage fallback:
+
+- Official Tauri SQL plugin with SQLite enabled
+- `sqlite:photoflow.db` for desktop metadata
+- Metadata store boundary under the repository
+- Browser metadata store backed by existing localStorage helpers
+- SQLite metadata store for sessions, photos, locations, hour buckets, import queue, and app state
+- Phase 4 file storage remains responsible for imported image files
+- SQLite stores metadata and file references only, not original image blobs
+
+## Phase 6 — Watched Folder Ingest (CURRENT)
+
+Add desktop-only watched-folder ingest:
+
+- Tauri dialog folder selection
+- Tauri filesystem watching
+- file stability checks before import
+- supported image files copied into managed app-local storage
+- managed path organized by date/location/session
+- SQLite photo/import queue metadata for watched-folder imports
+- visible watcher controls in the Local Ingest panel
+- browser mode remains manual-import only and shows watcher as desktop-only
+
+Still out of scope unless explicitly reintroduced:
+
+- DSLR SDK / Canon SDK / tethering
+- face matching
+- print package routing
+- source folder cleanup/archive movement
+- cloud sync
+
+## Future — Operator Correction Tools
 
 Make the correction affordances already visible in the UI actually work:
 
@@ -110,16 +160,16 @@ Make the correction affordances already visible in the UI actually work:
 
 This is the major value-add phase.
 
-## Phase 5 — Demo Hardening (Planned)
+## Future — Demo Hardening
 
 - Better empty and error states
 - Demo reset tooling
 - Logging and failure handling
 - Startup validation
 - Installer/bootstrap improvements
-- Tauri or Electron desktop packaging
+- Installer packaging polish
 
-## Phase 6 — Platform Expansion (Future)
+## Future — Platform Expansion
 
 Cloud sync, licensing, remote monitoring, SMS gallery delivery, analytics, multi-venue support, AI processing pipeline, print workflow expansion. Not in current scope.
 
@@ -166,3 +216,21 @@ Do not build these until explicitly scoped:
 ## Desired Agent Behavior
 
 Act as an implementation partner. Make progress but identify bad assumptions early. Use small milestones. Keep the app runnable at every step. Prioritize visible operational workflow over theoretical completeness.
+
+## Phase Checklist Rule
+
+Every development phase must include a dedicated phase checklist document.
+
+For each phase:
+
+- Create a checklist file named `PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Define the phase goal
+- Define what is in scope
+- Define what is out of scope
+- List implementation tasks
+- List validation commands
+- List acceptance criteria
+- Update the checklist as work progresses
+- Use the checklist as the final source of truth before declaring the phase complete
+
+No phase should be considered complete until its checklist has been reviewed and all required items are either completed or explicitly marked as deferred with a reason.

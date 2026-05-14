@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag } from 'lucide-react';
+import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { Seg } from '../../components/Seg';
 import { useApp } from '../../context/AppContext';
@@ -7,7 +7,11 @@ import { HOUR_SHORT } from '../../data/models';
 import type { FilterKey } from '../../data/models';
 
 export function GalleryCenter() {
-  const { sessions, allPhotos, selectedSessionId, selectedHour, selectSession, selectPhoto, setTab, filter, setFilter } = useApp();
+  const {
+    sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
+    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
+    setTab, filter, setFilter,
+  } = useApp();
   const [search, setSearch] = useState('');
 
   const short = HOUR_SHORT[selectedHour] ?? selectedHour;
@@ -47,6 +51,20 @@ export function GalleryCenter() {
         />
         <button className="icon-btn"><ArrowUpDown size={13} /></button>
         <button className="icon-btn"><RefreshCw size={13} /></button>
+        <button
+          className="icon-btn"
+          title="Delete selected photos"
+          disabled={selectedPhotoIds.length === 0}
+          onClick={() => {
+            if (selectedPhotoIds.length === 0) return;
+            const label = selectedPhotoIds.length === 1 ? 'this photo' : `${selectedPhotoIds.length} photos`;
+            if (window.confirm(`Delete ${label} from PhotoFlow? Imported files will also be removed from managed storage.`)) {
+              void deleteSelectedPhotos();
+            }
+          }}
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
 
       {/* Session list */}
@@ -100,10 +118,17 @@ export function GalleryCenter() {
               {allPhotos.filter(p => p.sessionId === s.id && !p.isHidden).map((photo, i) => (
                 <div
                   key={photo.id}
-                  onClick={e => { e.stopPropagation(); selectSession(s.id); selectPhoto(photo.id); }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    selectSession(s.id);
+                    if (e.shiftKey) selectPhotoRange(photo.id);
+                    else if (e.ctrlKey || e.metaKey) togglePhotoSelection(photo.id);
+                    else selectPhoto(photo.id);
+                  }}
                   style={{
                   width: 84, height: 84, borderRadius: 3, overflow: 'hidden', position: 'relative', cursor: 'pointer',
-                  border: `1px solid ${selectedSessionId === s.id && i === 0 ? 'var(--accent)' : 'var(--line)'}`,
+                  border: `1px solid ${selectedPhotoIds.includes(photo.id) || selectedPhotoId === photo.id ? 'var(--accent)' : 'var(--line)'}`,
+                  boxShadow: selectedPhotoIds.includes(photo.id) ? '0 0 0 2px rgba(61,214,196,0.35)' : undefined,
                 }}>
                   {photo.thumbnailUrl ? (
                     <img
@@ -123,6 +148,14 @@ export function GalleryCenter() {
                   </div>
                   {(photo.flag === 'flagged' || (s.status === 'flagged' && i === 0)) && (
                     <div style={{ position: 'absolute', top: 3, right: 3, width: 6, height: 6, borderRadius: '50%', background: 'var(--warn)' }} />
+                  )}
+                  {selectedPhotoIds.includes(photo.id) && (
+                    <div style={{
+                      position: 'absolute', right: 4, bottom: 4, width: 16, height: 16, borderRadius: 3,
+                      background: 'var(--accent)', color: '#04211f', display: 'grid', placeItems: 'center',
+                    }}>
+                      <Check size={11} strokeWidth={3} />
+                    </div>
                   )}
                 </div>
               ))}

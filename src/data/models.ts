@@ -6,7 +6,10 @@ export type PhotoFlag = 'none' | 'flagged' | 'rejected' | 'favorite';
 export type SessionStatus = 'active' | 'complete' | 'flagged' | 'archived';
 export type TabKey = 'gallery' | 'workshop' | 'streams' | 'print' | 'config';
 export type FilterKey = 'All' | 'Flagged' | 'Processed' | 'Pending';
-export type ImportStatus = 'queued' | 'importing' | 'complete' | 'skipped' | 'failed';
+export type ImportStatus = 'queued' | 'stabilizing' | 'importing' | 'complete' | 'skipped' | 'failed';
+export type PhotoStorageKind = 'demo-asset' | 'browser-data-url' | 'tauri-managed-file';
+export type ImportSourceType = 'manual-picker' | 'watched-folder';
+export type WatcherStatus = 'desktop-only' | 'off' | 'watching' | 'importing' | 'error';
 
 export interface CaptureLocation {
   id: string;
@@ -52,6 +55,15 @@ export interface Photo {
   fileSizeMb: number;
   fileFormat: string;
   originalPath?: string;
+  storageKind?: PhotoStorageKind;
+  storagePath?: string;
+  sourceType?: ImportSourceType;
+  sourcePath?: string;
+  managedOriginalPath?: string;
+  importedAt?: string;
+  originalFilename?: string;
+  sizeBytes?: number;
+  lastModified?: number;
   importedFile?: ImportedFileMetadata;
 }
 
@@ -70,9 +82,31 @@ export interface ImportQueueItem {
   progress: number;
   fileSize?: number;
   lastModified?: number;
+  sourceType?: ImportSourceType;
+  sourcePath?: string;
+  sourceFilename?: string;
+  destinationPath?: string;
+  photoId?: string;
+  detectedAt?: string;
+  importedAt?: string;
   error?: string;
   createdAt: string;
   completedAt?: string;
+}
+
+export interface WatchedFolderSettings {
+  watchEnabled: boolean;
+  watchedImportFolder: string | null;
+  fileSettleDelayMs: number;
+  defaultCaptureLocationId: string;
+  defaultSessionAssignmentMode: 'active-session';
+}
+
+export interface WatcherRuntimeState {
+  status: WatcherStatus;
+  lastDetected?: string;
+  lastImport?: string;
+  error?: string;
 }
 
 // Lightweight type used by the hourly folder list in the left panel

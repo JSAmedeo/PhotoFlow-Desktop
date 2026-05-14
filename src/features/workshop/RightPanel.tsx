@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check as CheckIcon, AlertTriangle, Upload, Trash2 } from 'lucide-react';
+import { Check as CheckIcon, AlertTriangle, Upload, Trash2, FolderOpen, Pause, Play } from 'lucide-react';
 import { Slider } from '../../components/Slider';
 import { Select } from '../../components/Select';
 import { Seg } from '../../components/Seg';
@@ -38,6 +38,10 @@ export function RightPanel() {
     importPhotosToActiveSession,
     clearCompletedImports,
     clearImportQueue,
+    watchedFolderSettings,
+    watcherRuntime,
+    chooseWatchedFolder,
+    updateWatchedFolderSettings,
   } = useApp();
   const [bgModel,     setBgModel]     = useState('Local Service - General Model');
   const [sensitivity, setSensitivity] = useState(72);
@@ -58,7 +62,8 @@ export function RightPanel() {
   const completeCount = queueForSession.filter(item => item.status === 'complete').length;
   const skippedCount = queueForSession.filter(item => item.status === 'skipped').length;
   const failedCount = queueForSession.filter(item => item.status === 'failed').length;
-  const activeCount = queueForSession.filter(item => item.status === 'queued' || item.status === 'importing').length;
+  const activeCount = queueForSession.filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing').length;
+  const watchedFolderLabel = watchedFolderSettings.watchedImportFolder?.split(/[\\/]/).filter(Boolean).pop() ?? 'Not configured';
 
   const handleFiles = async (files: FileList | null) => {
     const picked = Array.from(files ?? []);
@@ -173,6 +178,52 @@ export function RightPanel() {
               <span style={{ color: 'var(--ink-3)' }}>Formats</span>
               <span className="mono" style={{ color: 'var(--ink-2)' }}>image/* · demo storage</span>
             </div>
+            <div style={{ height: 1, background: 'var(--line-soft)', margin: '2px 0' }} />
+            <SectionHead
+              label="Watched Folder"
+              count={watcherRuntime.status}
+              action={watcherRuntime.status !== 'desktop-only' ? (
+                <button
+                  className="icon-btn"
+                  onClick={() => void updateWatchedFolderSettings({ watchEnabled: !watchedFolderSettings.watchEnabled })}
+                  title={watchedFolderSettings.watchEnabled ? 'Disable watcher' : 'Enable watcher'}
+                >
+                  {watchedFolderSettings.watchEnabled ? <Pause size={13} /> : <Play size={13} />}
+                </button>
+              ) : undefined}
+            />
+            <div className="col" style={{ gap: 6 }}>
+              {watcherRuntime.status === 'desktop-only' ? (
+                <div style={{ fontSize: 10.5, color: 'var(--ink-4)', lineHeight: 1.35 }}>
+                  Watched folder ingest is available in Tauri desktop mode only.
+                </div>
+              ) : (
+                <>
+                  <button className="btn block" onClick={() => void chooseWatchedFolder()}>
+                    <FolderOpen size={13} /> Choose Folder
+                  </button>
+                  <div className="row" style={{ justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
+                    <span style={{ color: 'var(--ink-3)' }}>Path</span>
+                    <span className="mono" title={watchedFolderSettings.watchedImportFolder ?? undefined} style={{ color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {watchedFolderLabel}
+                    </span>
+                  </div>
+                  <div className="row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
+                    <span style={{ color: 'var(--ink-3)' }}>Last detected</span>
+                    <span className="mono" style={{ color: 'var(--ink-2)' }}>{watcherRuntime.lastDetected ?? 'none'}</span>
+                  </div>
+                  <div style={{
+                    fontSize: 10.5,
+                    color: watcherRuntime.status === 'error' ? 'var(--danger)' : 'var(--ink-3)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }} title={watcherRuntime.error ?? watcherRuntime.lastImport}>
+                    {watcherRuntime.error ?? watcherRuntime.lastImport ?? 'No watched-folder imports yet.'}
+                  </div>
+                </>
+              )}
+            </div>
             {queueForSession.length > 0 && (
               <>
                 <div className="row gap-2" style={{ fontSize: 10.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
@@ -187,7 +238,7 @@ export function RightPanel() {
                     <div key={item.id} className="status-item">
                       <span className="ico">
                         {item.status === 'complete' && <CheckIcon size={12} strokeWidth={2.4} style={{ color: 'var(--ok)' }} />}
-                        {item.status === 'importing' && <div className="spin" />}
+                        {(item.status === 'importing' || item.status === 'stabilizing') && <div className="spin" />}
                         {(item.status === 'failed' || item.status === 'skipped') && <AlertTriangle size={12} style={{ color: item.status === 'failed' ? 'var(--danger)' : 'var(--warn)' }} />}
                         {item.status === 'queued' && <Upload size={12} style={{ color: 'var(--ink-4)' }} />}
                       </span>

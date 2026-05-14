@@ -1,5 +1,8 @@
 node_modules/
 dist/
+src-tauri/target/
+sample-images/
+test-import/
 
 *.log
 npm-debug.log*

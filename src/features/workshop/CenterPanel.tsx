@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Star, Flag, Info, Maximize2, Plus, ChevronLeft, ChevronRight, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn, Undo2, Redo2, Crop, Upload, Eye, Check } from 'lucide-react';
+import { Star, Flag, Info, Maximize2, Plus, ChevronLeft, ChevronRight, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn, Undo2, Redo2, Crop, Upload, Eye, Check, Trash2 } from 'lucide-react';
 import { HourFilmstrip } from './HourFilmstrip';
 import { useApp } from '../../context/AppContext';
 
@@ -14,9 +14,11 @@ interface CenterPanelProps {
   setActiveTool:  (t: string) => void;
 }
 
-function SessionPhotoMini({ idx, active, status, src, filename }: { idx: number; active: boolean; status: string; src: string; filename: string }) {
+function SessionPhotoMini({
+  idx, active, selected, status, src, filename,
+}: { idx: number; active: boolean; selected: boolean; status: string; src: string; filename: string }) {
   return (
-    <div className={`session-thumb ${active ? 'active' : ''}`}>
+    <div className={`session-thumb ${active ? 'active' : ''}`} style={{ boxShadow: selected ? '0 0 0 2px rgba(61,214,196,0.55)' : undefined }}>
       <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
         <img
           src={src}
@@ -26,6 +28,14 @@ function SessionPhotoMini({ idx, active, status, src, filename }: { idx: number;
         />
       </div>
       <div className="st-tag">{`#${String(idx).padStart(2, '0')}`}</div>
+      {selected && (
+        <div style={{
+          position: 'absolute', top: 4, right: 4, width: 15, height: 15, borderRadius: 3,
+          background: 'var(--accent)', color: '#04211f', display: 'grid', placeItems: 'center',
+        }}>
+          <Check size={10} strokeWidth={3} />
+        </div>
+      )}
       {status === 'done'       && <div className="st-ok"><Check size={9} strokeWidth={3} /></div>}
       {status === 'processing' && <div className="st-warn" style={{ background: 'var(--accent)' }} />}
       {status === 'warn'       && <div className="st-warn" />}
@@ -36,11 +46,15 @@ function SessionPhotoMini({ idx, active, status, src, filename }: { idx: number;
 export function CenterPanel({
   activePhoto, setActivePhoto, split, setSplit, zoom, setZoom, activeTool, setActiveTool,
 }: CenterPanelProps) {
-  const { sessions, photos, selectedSessionId, selectedPhotoId, selectPhoto } = useApp();
+  const {
+    sessions, photos, selectedSessionId, selectedPhotoId, selectedPhotoIds,
+    selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
+  } = useApp();
   const session = sessions.find(s => s.id === selectedSessionId) ?? sessions[0];
   const selectedIndex = Math.max(0, photos.findIndex(p => p.id === selectedPhotoId));
   const currentIndex = photos[activePhoto - 1] ? activePhoto - 1 : selectedIndex;
   const currentPhoto = photos[currentIndex] ?? photos[0];
+  const selectedCount = selectedPhotoIds.length;
   const wrapRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -95,6 +109,19 @@ export function CenterPanel({
         <button className="btn ghost"><Star size={12} /> Favorite</button>
         <button className="btn ghost"><Flag size={12} /> Flag</button>
         <button className="btn ghost"><Info size={12} /> Metadata</button>
+        <button
+          className="btn ghost"
+          disabled={selectedCount === 0}
+          onClick={() => {
+            if (selectedCount === 0) return;
+            const label = selectedCount === 1 ? 'this photo' : `${selectedCount} photos`;
+            if (window.confirm(`Delete ${label} from this session? Imported files will also be removed from managed storage.`)) {
+              void deleteSelectedPhotos();
+            }
+          }}
+        >
+          <Trash2 size={12} /> Delete {selectedCount > 1 ? selectedCount : ''}
+        </button>
         <button className="btn ghost"><Maximize2 size={12} /></button>
       </div>
 
@@ -103,10 +130,22 @@ export function CenterPanel({
         {photos.map((p, i) => (
           <div
             key={p.id}
-            onClick={() => { setActivePhoto(i + 1); selectPhoto(p.id); }}
+            onClick={event => {
+              setActivePhoto(i + 1);
+              if (event.shiftKey) selectPhotoRange(p.id);
+              else if (event.metaKey || event.ctrlKey) togglePhotoSelection(p.id);
+              else selectPhoto(p.id);
+            }}
             style={{ cursor: 'pointer' }}
           >
-            <SessionPhotoMini idx={i + 1} active={currentPhoto?.id === p.id} status={p.processingStatus} src={p.thumbnailUrl} filename={p.filename} />
+            <SessionPhotoMini
+              idx={i + 1}
+              active={currentPhoto?.id === p.id}
+              selected={selectedPhotoIds.includes(p.id)}
+              status={p.processingStatus}
+              src={p.thumbnailUrl}
+              filename={p.filename}
+            />
           </div>
         ))}
         <div className="session-thumb" style={{

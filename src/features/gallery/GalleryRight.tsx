@@ -1,9 +1,12 @@
-import { ChevronLeft, ChevronRight, Layers, Star, Flag } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Layers, Star, Flag, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
 
 export function GalleryRight() {
-  const { sessions, photos, selectedSessionId, selectedPhotoId, selectPhoto, setTab, toggleFlag } = useApp();
+  const {
+    sessions, photos, selectedSessionId, selectedPhotoId, selectedPhotoIds,
+    selectPhoto, togglePhotoSelection, selectPhotoRange, setTab, toggleFlag, deleteSelectedPhotos,
+  } = useApp();
   const s = sessions.find(x => x.id === selectedSessionId) ?? sessions[0];
   const selectedPhoto = photos.find(p => p.id === selectedPhotoId) ?? photos[0];
   if (!s) return <div className="panel right" />;
@@ -42,11 +45,16 @@ export function GalleryRight() {
               {photos.map((photo, i) => (
                 <div
                   key={photo.id}
-                  onClick={() => selectPhoto(photo.id)}
+                  onClick={event => {
+                    if (event.shiftKey) selectPhotoRange(photo.id);
+                    else if (event.ctrlKey || event.metaKey) togglePhotoSelection(photo.id);
+                    else selectPhoto(photo.id);
+                  }}
                   style={{
                   width: 30, height: 30, borderRadius: 2, overflow: 'hidden',
-                  border: `1px solid ${photo.id === selectedPhoto?.id ? 'var(--accent)' : 'var(--line)'}`,
+                  border: `1px solid ${photo.id === selectedPhoto?.id || selectedPhotoIds.includes(photo.id) ? 'var(--accent)' : 'var(--line)'}`,
                   cursor: 'pointer',
+                  position: 'relative',
                 }}>
                   {photo.thumbnailUrl ? (
                     <img
@@ -57,6 +65,11 @@ export function GalleryRight() {
                     />
                   ) : (
                     <Tile tint={s.tint} size={30} sessionPos={s.id + i + 'r'} />
+                  )}
+                  {selectedPhotoIds.includes(photo.id) && (
+                    <div style={{ position: 'absolute', right: 2, bottom: 2, color: 'var(--accent)' }}>
+                      <Check size={9} strokeWidth={3} />
+                    </div>
                   )}
                 </div>
               ))}
@@ -116,6 +129,19 @@ export function GalleryRight() {
               if (firstPhoto) toggleFlag(firstPhoto);
             }}>
               <Flag size={12} /> {s.status === 'flagged' ? 'Unflag' : 'Flag for review'}
+            </button>
+            <button
+              className="btn block"
+              disabled={selectedPhotoIds.length === 0}
+              onClick={() => {
+                if (selectedPhotoIds.length === 0) return;
+                const label = selectedPhotoIds.length === 1 ? 'this photo' : `${selectedPhotoIds.length} photos`;
+                if (window.confirm(`Delete ${label} from this session? Imported files will also be removed from managed storage.`)) {
+                  void deleteSelectedPhotos();
+                }
+              }}
+            >
+              <Trash2 size={12} /> Delete selected
             </button>
           </div>
         </div>
