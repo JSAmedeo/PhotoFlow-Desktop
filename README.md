@@ -33,7 +33,7 @@ npm install
 npm run tauri:dev
 ```
 
-This launches PhotoFlow Desktop in a native desktop window. In this mode, imported image files are copied into managed app-local storage and metadata is stored in SQLite through the Tauri SQL plugin.
+This launches PhotoFlow Desktop in a native desktop window. In this mode, imported image files are copied into the support-friendly managed storage folder at `C:\PhotoFlow Desktop` and metadata is stored in SQLite through the Tauri SQL plugin.
 
 ## Watched folder ingest
 
@@ -124,13 +124,17 @@ When photos are imported:
 
 In browser mode, imported images are stored as base64/data URLs in browser `localStorage`. Browser metadata also uses `localStorage`. This is intentionally demo-scale storage. Large batches or large photos can hit browser storage limits.
 
-In Tauri desktop mode, imported image bytes are copied into managed app-local storage under `photos/imported/{sessionCode}/`. Photo/session metadata is stored in SQLite using `sqlite:photoflow.db`. SQLite stores metadata and file references only, not original image blobs.
+In Tauri desktop mode, imported image bytes are copied into managed storage under `C:\PhotoFlow Desktop`. Photo/session metadata is stored in SQLite using `sqlite:photoflow.db`. SQLite stores metadata and file references only, not original image blobs.
 
 Watched-folder imports use the organized managed path:
 
 ```txt
-photos/imported/YYYY/MM/DD/{captureLocationSlug}/{sessionKey}/originals/{photoId}_{safeOriginalFilename}
+C:\PhotoFlow Desktop\photos\imported\YYYY\MM\DD\{captureLocationSlug}\{sessionKey}\originals\{photoId}_{safeOriginalFilename}
 ```
+
+This root-level folder is intentional. It gives support staff a predictable location for checking imported originals, backup behavior, and troubleshooting storage issues. Previous app-local imports are intentionally disregarded for the fresh storage start.
+
+Tauri's asset protocol is scoped to `C:\PhotoFlow Desktop\**` so stored originals can be rendered in `<img>` tags inside the desktop webview.
 
 ## Phase 5 SQLite metadata
 
@@ -145,11 +149,20 @@ Current SQLite tables:
 - `import_queue`
 - `app_state`
 
-Migrations run safely during startup. If the SQLite database has no sessions, the app seeds the same demo data used by browser mode. Reset demo data clears and reseeds metadata but does not delete managed imported image files.
+Migrations run safely during startup. If the SQLite database has no sessions, the app seeds the same demo data used by browser mode.
 
 ## Resetting to demo state
 
 Call `resetDemoData()` from `repository.ts`. In browser mode it clears PhotoFlow `localStorage` metadata and re-seeds. In Tauri mode it clears and re-seeds SQLite metadata. The context's `resetDemo()` action calls this and refreshes UI state without a page reload, including clearing imported photo metadata and the import queue.
+
+Desktop mode also includes a **Fresh desktop reset** action in the Local Ingest panel. This is intended for setup/testing support. It:
+
+- stops the watcher
+- deletes `C:\PhotoFlow Desktop`
+- clears and reseeds SQLite metadata
+- resets the UI back to the demo sessions/photos
+
+It does not delete the watched FTP/intake folder.
 
 ## What to check visually
 

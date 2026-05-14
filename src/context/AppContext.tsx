@@ -22,6 +22,7 @@ import {
   getActiveTab,         setActiveTab,
   getSelectedHour,      setSelectedHour,
   resetDemoData,
+  freshDesktopReset as repoFreshDesktopReset,
   updatePhotoMetadata as repoUpdatePhoto,
   deletePhotos as repoDeletePhotos,
   getImportQueue,
@@ -70,6 +71,7 @@ interface AppActions {
   clearImportQueue: () => void;
   chooseWatchedFolder: () => Promise<void>;
   updateWatchedFolderSettings: (changes: Partial<WatchedFolderSettings>) => Promise<void>;
+  freshDesktopReset: () => Promise<void>;
   resetDemo:       () => void;
 }
 
@@ -91,6 +93,45 @@ async function getResolvedPhotoState(sessionId: string): Promise<{ allPhotos: Ph
     allPhotos: allResolvedPhotos,
     photos: allResolvedPhotos.filter(photo => photo.sessionId === sessionId),
   };
+}
+
+async function applyFreshDemoState(
+  freshSessions: Session[],
+  setters: {
+    setSessions: (sessions: Session[]) => void;
+    setSession: (id: string) => void;
+    setPhoto: (id: string) => void;
+    setSelectedPhotoIds: (ids: string[]) => void;
+    setPhotos: (photos: Photo[]) => void;
+    setAllPhotos: (photos: Photo[]) => void;
+    setLocations: (locations: CaptureLocation[]) => void;
+    setHours: (hours: HourBucket[]) => void;
+    setImportQueue: (queue: ImportQueueItem[]) => void;
+    setWatchedFolderSettingsState: (settings: WatchedFolderSettings) => void;
+    setTabState: (tab: TabKey) => void;
+    setHourState: (hour: string) => void;
+    setFilterState: (filter: FilterKey) => void;
+  },
+): Promise<void> {
+  const defaultId = freshSessions.find(session => session.id === 's-05')?.id ?? freshSessions[0]?.id ?? '';
+  const defaultPhotoId = defaultId ? `${defaultId}-p1` : '';
+
+  setters.setSessions(freshSessions);
+  setters.setSession(defaultId);
+  setters.setPhoto(defaultPhotoId);
+  setters.setSelectedPhotoIds(defaultPhotoId ? [defaultPhotoId] : []);
+  await setSelectedSessionId(defaultId);
+  await setSelectedPhotoId(defaultPhotoId);
+  const resolved = await getResolvedPhotoState(defaultId);
+  setters.setPhotos(resolved.photos);
+  setters.setAllPhotos(resolved.allPhotos);
+  setters.setLocations(await getLocations());
+  setters.setHours(await getHours());
+  setters.setImportQueue(await getImportQueue());
+  setters.setWatchedFolderSettingsState(await repoGetWatchedFolderSettings());
+  setters.setTabState('gallery');
+  setters.setHourState('14:00');
+  setters.setFilterState('All');
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -325,25 +366,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resetDemo = useCallback(() => {
     void (async () => {
       const freshSessions = await resetDemoData();
-      const defaultId = freshSessions.find(session => session.id === 's-05')?.id ?? freshSessions[0]?.id ?? '';
-      setSessions(freshSessions);
-      setSession(defaultId);
-      setPhoto(`${defaultId}-p1`);
-      setSelectedPhotoIds([`${defaultId}-p1`]);
-      await setSelectedSessionId(defaultId);
-      await setSelectedPhotoId(`${defaultId}-p1`);
-      const resolved = await getResolvedPhotoState(defaultId);
-      setPhotos(resolved.photos);
-      setAllPhotos(resolved.allPhotos);
-      setLocations(await getLocations());
-      setHours(await getHours());
-      setImportQueue(await getImportQueue());
-      const watcherSettings = await repoGetWatchedFolderSettings();
-      setWatchedFolderSettingsState(watcherSettings);
-      setTabState('gallery');
-      setHourState('14:00');
-      setFilterState('All');
+      await applyFreshDemoState(freshSessions, {
+        setSessions,
+        setSession,
+        setPhoto,
+        setSelectedPhotoIds,
+        setPhotos,
+        setAllPhotos,
+        setLocations,
+        setHours,
+        setImportQueue,
+        setWatchedFolderSettingsState,
+        setTabState,
+        setHourState,
+        setFilterState,
+      });
     })();
+  }, []);
+
+  const freshDesktopReset = useCallback(async () => {
+    await stopWatchedFolder();
+    setWatcherRuntime({ status: isTauriRuntime() ? 'off' : 'desktop-only' });
+    const freshSessions = await repoFreshDesktopReset();
+    await applyFreshDemoState(freshSessions, {
+      setSessions,
+      setSession,
+      setPhoto,
+      setSelectedPhotoIds,
+      setPhotos,
+      setAllPhotos,
+      setLocations,
+      setHours,
+      setImportQueue,
+      setWatchedFolderSettingsState,
+      setTabState,
+      setHourState,
+      setFilterState,
+    });
   }, []);
 
   const value: AppContextValue = {
@@ -352,7 +411,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     watchedFolderSettings, watcherRuntime, isLoading,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, setTab, setHour, setFilter,
     toggleFavorite, toggleFlag, importPhotosToActiveSession, clearCompletedImports, clearImportQueue,
-    chooseWatchedFolder, updateWatchedFolderSettings, resetDemo,
+    chooseWatchedFolder, updateWatchedFolderSettings, freshDesktopReset, resetDemo,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

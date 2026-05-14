@@ -56,6 +56,7 @@ Add Tauri desktop watched-folder ingest that detects supported image files, wait
 - [x] Persist watched-folder photo metadata.
 - [x] Refresh UI after watched-folder imports.
 - [x] Preserve manual import flow.
+- [x] Add guarded fresh desktop reset action for setup/testing.
 - [x] Add Phase 6 documentation.
 - [x] Update README and context docs.
 
@@ -154,6 +155,7 @@ Add Tauri desktop watched-folder ingest that detects supported image files, wait
 - Source directory access may need re-selection if OS/plugin scope rules invalidate access across sessions.
 - Duplicate detection uses filename, file size, last modified time, and session; content hashing is deferred.
 - Reset demo data resets metadata but does not delete managed imported files.
+- Fresh desktop reset deletes `C:\PhotoFlow Desktop` and reseeds SQLite metadata.
 
 ## Deferred Items
 

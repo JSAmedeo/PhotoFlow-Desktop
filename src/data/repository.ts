@@ -31,6 +31,11 @@ export async function resetDemoData(): Promise<Session[]> {
   return (await getMetadataStore()).resetDemoData();
 }
 
+export async function freshDesktopReset(): Promise<Session[]> {
+  await getPhotoStorageService().clearManagedPhotoStorage();
+  return (await getMetadataStore()).resetDemoData();
+}
+
 // ----- Sessions --------------------------------------------------------------
 
 export async function getSessions(): Promise<Session[]> {

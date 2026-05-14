@@ -65,7 +65,7 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 
 **Current persistence direction:**
 - Browser mode keeps localStorage metadata and base64/data URL imported images.
-- Tauri mode stores imported image files in managed app-local storage.
+- Tauri mode stores imported image files in managed storage under `C:\PhotoFlow Desktop`.
 - Tauri mode stores sessions/photos/import queue/app state metadata in SQLite.
 - UI components should not import Tauri SQL or filesystem APIs.
 - Watched-folder service owns file watching and hands stable candidates to the auto-import pipeline.

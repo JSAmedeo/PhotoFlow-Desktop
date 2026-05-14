@@ -112,7 +112,7 @@ Add Tauri v2 while preserving browser mode and the existing UI:
 - Centralized browser vs Tauri runtime detection
 - Storage service boundary for imported photos
 - Browser fallback storage using base64/data URLs
-- Tauri managed app-local file storage for imported images
+- Tauri managed file storage for imported images under `C:\PhotoFlow Desktop`
 - Photo source resolver so UI components receive displayable image URLs
 
 ## Phase 5 — Local Database Foundation (COMPLETE)
@@ -134,7 +134,7 @@ Add desktop-only watched-folder ingest:
 - Tauri dialog folder selection
 - Tauri filesystem watching
 - file stability checks before import
-- supported image files copied into managed app-local storage
+- supported image files copied into managed storage under `C:\PhotoFlow Desktop`
 - managed path organized by date/location/session
 - SQLite photo/import queue metadata for watched-folder imports
 - visible watcher controls in the Local Ingest panel

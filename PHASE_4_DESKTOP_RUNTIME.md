@@ -24,11 +24,13 @@ Run:
 npm run tauri:dev
 ```
 
-Tauri wraps the Vite/React app in a native desktop window. In desktop mode, imported images are copied into managed app-local storage under:
+Tauri wraps the Vite/React app in a native desktop window. In desktop mode, imported images are copied into PhotoFlow managed storage. The current support-friendly storage root is:
 
 ```txt
-photos/imported/{sessionCode}/{photoId}-{safe-filename}
+C:\PhotoFlow Desktop
 ```
+
+Previous Phase 4/5 app-local imports are intentionally disregarded after the fresh storage reset to `C:\PhotoFlow Desktop`.
 
 The app stores a relative reference in the photo record and resolves that reference into a webview-safe image URL for `<img>` tags.
 
@@ -50,7 +52,7 @@ Browser mode:
 Tauri desktop mode:
 
 - Uses the same metadata repository for now.
-- Copies imported image bytes into Tauri app-local data.
+- Copies imported image bytes into `C:\PhotoFlow Desktop`.
 - Stores `storageKind: "tauri-managed-file"` and a relative `storagePath`.
 - Resolves managed files through Tauri's asset protocol so existing UI image tags can display them.
 
@@ -79,4 +81,4 @@ Browser mode does not require Rust.
 - Phase 4 originally used `localStorage` metadata; Phase 5 added SQLite for Tauri desktop metadata.
 - Imported originals are reused as thumbnails.
 - No folder watcher, DSLR/tethering, print workflow, AI processing, cloud sync, updater, or installer polish is included.
-- If metadata persistence fails after a Tauri file write, the copied file may remain as an orphaned app-local file.
+- If metadata persistence fails after a Tauri file write, the copied file may remain as an orphaned file under `C:\PhotoFlow Desktop`.

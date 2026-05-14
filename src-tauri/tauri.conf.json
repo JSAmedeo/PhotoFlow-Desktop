@@ -24,7 +24,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPLOCALDATA/photos/imported/**"
+          "C:\\PhotoFlow Desktop\\**",
+          "C:/PhotoFlow Desktop/**"
         ]
       }
     }

@@ -1,9 +1,11 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { appLocalDataDir, join } from '@tauri-apps/api/path';
-import { BaseDirectory, mkdir, remove, writeFile } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
+import { mkdir, remove, writeFile } from '@tauri-apps/plugin-fs';
 import type { Photo } from '../data/models';
 import type { PhotoStorageService, SavePhotoContext, SavedPhotoReference } from './photoStorage';
 import { FALLBACK_PHOTO_SOURCE } from './photoStorage';
+
+const WINDOWS_SUPPORT_STORAGE_ROOT = 'C:\\PhotoFlow Desktop';
 
 function sanitizePathPart(value: string): string {
   const cleaned = value
@@ -29,13 +31,16 @@ function datePathParts(value: string): string[] {
   ];
 }
 
-async function absoluteAppLocalPath(relativePath: string): Promise<string> {
-  const parts = relativePath.split('/').filter(Boolean);
-  return join(await appLocalDataDir(), ...parts);
+function isAbsoluteWindowsPath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path);
 }
 
-async function displayUrlForRelativePath(relativePath: string): Promise<string> {
-  return convertFileSrc(await absoluteAppLocalPath(relativePath));
+function isAbsoluteUnixPath(path: string): boolean {
+  return path.startsWith('/');
+}
+
+function isSupportedManagedPath(path: string): boolean {
+  return isAbsoluteWindowsPath(path) || isAbsoluteUnixPath(path);
 }
 
 export const tauriPhotoStorage: PhotoStorageService = {
@@ -44,38 +49,56 @@ export const tauriPhotoStorage: PhotoStorageService = {
     const safeFilename = sanitizePathPart(context.originalFilename);
     const locationSlug = sanitizePathPart(context.captureLocationSlug ?? 'manual-import');
     const [year, month, day] = datePathParts(context.importedAt ?? new Date().toISOString());
-    const folder = `photos/imported/${year}/${month}/${day}/${locationSlug}/${safeSession}/originals`;
-    const relativePath = `${folder}/${sanitizePathPart(context.photoId)}_${safeFilename}`;
+    const folder = await join(
+      WINDOWS_SUPPORT_STORAGE_ROOT,
+      'photos',
+      'imported',
+      year,
+      month,
+      day,
+      locationSlug,
+      safeSession,
+      'originals',
+    );
+    const storagePath = await join(folder, `${sanitizePathPart(context.photoId)}_${safeFilename}`);
     const bytes = new Uint8Array(await file.arrayBuffer());
 
-    await mkdir(folder, { baseDir: BaseDirectory.AppLocalData, recursive: true });
-    await writeFile(relativePath, bytes, { baseDir: BaseDirectory.AppLocalData });
+    await mkdir(folder, { recursive: true });
+    await writeFile(storagePath, bytes);
 
     return {
       storageKind: 'tauri-managed-file',
-      displayUrl: await displayUrlForRelativePath(relativePath),
-      relativePath,
-      managedOriginalPath: relativePath,
+      displayUrl: convertFileSrc(storagePath),
+      relativePath: storagePath,
+      managedOriginalPath: storagePath,
       originalFilename: context.originalFilename,
       sizeBytes: file.size,
     };
   },
 
   async resolvePhotoSource(photo: Photo): Promise<string> {
-    if (photo.storageKind === 'tauri-managed-file' && photo.storagePath) {
-      return displayUrlForRelativePath(photo.storagePath);
+    if (photo.storageKind === 'tauri-managed-file' && photo.storagePath && isSupportedManagedPath(photo.storagePath)) {
+      return convertFileSrc(photo.storagePath);
     }
 
     return photo.displayUrl || photo.thumbnailUrl || photo.beforeImageUrl || FALLBACK_PHOTO_SOURCE;
   },
 
   async deletePhotoSource(photo: Photo): Promise<void> {
-    if (photo.storageKind !== 'tauri-managed-file' || !photo.storagePath) return;
+    if (photo.storageKind !== 'tauri-managed-file' || !photo.storagePath || !isSupportedManagedPath(photo.storagePath)) return;
 
     try {
-      await remove(photo.storagePath, { baseDir: BaseDirectory.AppLocalData });
+      await remove(photo.storagePath);
     } catch (error) {
       console.warn('[PhotoFlow] Could not remove managed photo file.', error);
+    }
+  },
+
+  async clearManagedPhotoStorage(): Promise<void> {
+    try {
+      await remove(WINDOWS_SUPPORT_STORAGE_ROOT, { recursive: true });
+    } catch (error) {
+      console.warn('[PhotoFlow] Could not remove managed storage root. It may not exist yet.', error);
     }
   },
 };

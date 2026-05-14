@@ -2,7 +2,7 @@
 
 Phase 6 adds a desktop-only watched-folder ingest path for PhotoFlow Desktop.
 
-The watched folder is an intake point only. After import, PhotoFlow copies files into managed app-local storage and treats that managed storage plus SQLite metadata as the app-owned source of truth.
+The watched folder is an intake point only. After import, PhotoFlow copies files into managed PhotoFlow storage and treats that managed storage plus SQLite metadata as the app-owned source of truth.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ watched folder
   -> watcher service
   -> stability check
   -> auto-import pipeline
-  -> managed app-local storage organized by date/location/session
+  -> managed storage organized by date/location/session
   -> SQLite metadata/import queue
   -> React UI
 ```
@@ -87,18 +87,36 @@ Archive rules and failed-file cleanup are deferred to a future phase.
 Watched-folder imports are copied to:
 
 ```txt
-photos/
-  imported/
-    YYYY/
-      MM/
-        DD/
-          {captureLocationSlug}/
-            {sessionKey}/
-              originals/
-                {photoId}_{safeOriginalFilename}
+C:\PhotoFlow Desktop\
+  photos\
+    imported\
+      YYYY\
+        MM\
+          DD\
+            {captureLocationSlug}\
+              {sessionKey}\
+                originals\
+                  {photoId}_{safeOriginalFilename}
 ```
 
-Older Phase 4/5 managed file paths remain compatible because image resolution still uses the stored relative path.
+The root `C:\PhotoFlow Desktop` folder is intentionally easy for support staff to inspect.
+
+Previous app-local managed file paths are intentionally disregarded after the fresh storage reset. New desktop imports should be tested from `C:\PhotoFlow Desktop` plus current SQLite metadata.
+
+The Tauri asset protocol is scoped to `C:\PhotoFlow Desktop\**` so these stored originals can render inside the desktop webview.
+
+## Fresh Desktop Reset
+
+The Local Ingest panel includes **Fresh desktop reset** in Tauri desktop mode.
+
+This action:
+
+- stops the watcher
+- deletes `C:\PhotoFlow Desktop`
+- clears and reseeds SQLite metadata
+- resets the UI to the demo sessions/photos
+
+It does not delete the watched FTP/intake folder.
 
 ## SQLite Metadata
 
@@ -130,6 +148,6 @@ Content hashing is deferred.
 
 - Folder access may need to be reselected if OS/plugin scope rules change across sessions.
 - Unsupported watched-folder files are ignored quietly.
-- The source folder is not cleaned up.
+- Successful watched-folder source files are removed after import; failed/skipped files remain for recovery.
 - The `+` photo strip tile is still visual only.
 - Imported originals are still reused as thumbnails.

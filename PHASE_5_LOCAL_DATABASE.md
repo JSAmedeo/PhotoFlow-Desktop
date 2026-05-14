@@ -6,10 +6,10 @@ The UI is intentionally unchanged. The new database layer sits underneath the ex
 
 ## Why SQLite Was Added
 
-Phase 4 stored imported desktop image files in managed Tauri app-local storage, but metadata still lived in browser `localStorage`. SQLite fixes that mismatch for desktop mode:
+Phase 4 stored imported desktop image files in managed desktop storage, but metadata still lived in browser `localStorage`. SQLite fixes that mismatch for desktop mode:
 
 ```txt
-desktop image files -> managed Tauri app-local storage
+desktop image files -> managed PhotoFlow storage
 photo/session metadata -> SQLite
 ```
 
@@ -26,7 +26,7 @@ file import -> base64/data URL -> localStorage metadata -> React UI
 Tauri desktop mode:
 
 ```txt
-file import -> managed app-local file storage -> SQLite metadata -> React UI
+file import -> managed PhotoFlow file storage -> SQLite metadata -> React UI
 ```
 
 ## Database
@@ -76,7 +76,7 @@ Reset demo data clears and reseeds metadata:
 - import queue
 - selected workflow state
 
-Reset does not delete managed imported image files from app-local storage. That cleanup needs a future, explicit file-retention policy.
+Reset does not delete managed imported image files from disk. That cleanup needs a future, explicit file-retention policy.
 
 ## Known Limitations
 
