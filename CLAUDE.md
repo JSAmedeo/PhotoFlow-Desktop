@@ -131,7 +131,7 @@ Primary reference: `snapdesk.html` — open in browser to compare against the ru
 
 Do not delete or modify the handoff folder. Use it as ongoing visual direction for all phases.
 
-## Project Structure (as of Phase 8)
+## Project Structure (as of Phase 8 + loose end fixes)
 
 ```
 src/
@@ -142,19 +142,19 @@ src/
     Seg.tsx          ← segmented control
     Check.tsx        ← checkbox
     TopBar.tsx
-    LeftPanel.tsx    ← location select + hourly folders; selectedLocationId wired to context
+    LeftPanel.tsx    ← location select, operating date navigator, hourly folders (non-empty only)
     TabBar.tsx       ← reads/sets activeTab via context
     StatusBar.tsx    ← reads session data from context
   features/
     gallery/
-      GalleryCenter.tsx  ← filters sessions by selectedLocationId from context
+      GalleryCenter.tsx  ← filters sessions by location + hour + operatingDate from context
       GalleryRight.tsx
     workshop/
       CenterPanel.tsx
-      RightPanel.tsx
-      HourFilmstrip.tsx
+      RightPanel.tsx     ← background removal, enhancement, upscaling, processing queue (no local ingest)
+      HourFilmstrip.tsx  ← filtered by hour + location + operatingDate; 2 thumbnails per session + badge
     streams/
-      ImageStreamsCenter.tsx  ← stream rail, cards, sparkline, watcher rows, modals
+      ImageStreamsCenter.tsx  ← stream rail, cards, live folder view (2s poll), sparkline, modals
   data/
     models.ts        ← all TypeScript interfaces and types
     seedData.ts      ← 14 seed sessions, generated photos, 4 locations, 12 hour buckets
@@ -173,14 +173,14 @@ src/
     tauriPhotoStorage.ts      ← writes files to C:\PhotoFlow Desktop\photos\...
     browserPhotoStorage.ts    ← base64 data URL fallback for browser mode
   context/
-    AppContext.tsx   ← data state: sessions, photos, tab, hour, filter, selectedLocationId
+    AppContext.tsx   ← data state: sessions, photos, tab, hour, filter, selectedLocationId, operatingDate; hours is a derived useMemo
   styles/
     global.css       ← full CSS design system
   App.tsx            ← AppProvider wrapper; UI-only state (zoom, activeTool, split) stays here
   main.tsx
 src-tauri/
   src/
-    lib.rs           ← Tauri commands including reveal_in_explorer
+    lib.rs           ← Tauri commands: reveal_in_explorer, list_folder_files
 public/
   demo-assets/       ← before.jpg, after.png (demo photos)
 design-handoff/      ← reference only, do not modify

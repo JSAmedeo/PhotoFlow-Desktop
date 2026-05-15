@@ -218,6 +218,48 @@ C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filen
 - Source folder cleanup/archive movement
 - Cloud sync
 
+## Post-Phase 8 — Loose End Fixes (COMPLETE)
+
+A series of targeted fixes applied after Phase 8, before Phase 9 was scoped.
+
+**Stream card watcher directory (ImageStreamsCenter):**
+- Watcher directory now shows a live view of what is physically in the watched folder, not import queue history
+- New Tauri command `list_folder_files(path)` in `src-tauri/src/lib.rs` reads the directory and returns file name, size, and modified timestamp
+- `StreamCard` polls every 2 seconds; files disappear from the view as soon as the watcher pipeline processes them
+- Per-row delete button removed — it was deleting import queue records, not actual files, which was misleading
+- Browser mode and streams without a configured folder show a placeholder
+
+**Gallery and Workshop hour filtering:**
+- Gallery (`GalleryCenter`) now filters sessions to only those with photos imported in the selected hour
+- Workshop session filmstrip (`HourFilmstrip`) applies the same hour filter
+- Both also apply the `selectedLocationId` location filter
+- Hour filtering is skipped in seed/demo mode (`hours.length === 0` — no real import activity today)
+
+**Hourly folders panel (LeftPanel):**
+- Empty gap hours between active import hours are now hidden from the folder list
+- "Today at a glance" bar chart still shows all hours including gaps for visual context
+- Auto-selects the most recent active hour on load if the persisted selection is empty or stale
+
+**Operating date selector (LeftPanel + AppContext + repository):**
+- Left/right chevrons in the Operating Date section navigate backward and forward by day
+- Right chevron is disabled when viewing today (no future data exists)
+- Calendar icon accents when viewing today
+- `operatingDate: Date` added to AppContext as a midnight-normalized `Date` value
+- `hours` changed from a fetched state to a derived `useMemo(buildHourlyImportBuckets(allPhotos, operatingDate))` — no extra fetch needed when the date changes
+- Gallery, Workshop filmstrip, and hourly folders all respond to date navigation automatically
+- `buildHourlyImportBuckets` is now exported from `repository.ts` and accepts an optional `date?` parameter
+
+**Workshop session filmstrip (HourFilmstrip):**
+- Each session now shows only its first 2 thumbnails
+- A `+N` badge indicates additional photos not shown
+- Sessions with no visible photos show a color tile placeholder
+- Horizontal footprint is now consistent regardless of session photo count
+
+**Workshop right panel (RightPanel):**
+- Local Ingest section removed (Import Photos button, watched folder controls, queue status)
+- `importPhotosToActiveSession` remains in context for future use; nothing calls it from this panel
+- Processing Queue demo section remains
+
 ## Future — Operator Correction Tools
 
 Make the correction affordances already visible in the UI actually work:
