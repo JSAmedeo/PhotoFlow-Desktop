@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "validate:filename-parser": "node scripts/validate-filename-parser.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",

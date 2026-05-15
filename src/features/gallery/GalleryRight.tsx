@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 export function GalleryRight() {
   const {
     sessions, photos, selectedSessionId, selectedPhotoId, selectedPhotoIds,
-    selectPhoto, togglePhotoSelection, selectPhotoRange, setTab, toggleFlag, deleteSelectedPhotos,
+    selectPhoto, togglePhotoSelection, selectPhotoRange, setTab, toggleFlag, deleteSelectedPhotos, deleteSessionFromGallery,
   } = useApp();
   const s = sessions.find(x => x.id === selectedSessionId) ?? sessions[0];
   const selectedPhoto = photos.find(p => p.id === selectedPhotoId) ?? photos[0];
@@ -142,6 +142,17 @@ export function GalleryRight() {
               }}
             >
               <Trash2 size={12} /> Delete selected
+            </button>
+            <button
+              className="btn block"
+              onClick={() => {
+                const label = `${s.sessionCode} (${s.photoCount} ${s.photoCount === 1 ? 'photo' : 'photos'})`;
+                if (window.confirm(`Delete session ${label} from PhotoFlow? Imported files in this session will also be removed from managed storage.`)) {
+                  void deleteSessionFromGallery(s.id);
+                }
+              }}
+            >
+              <Trash2 size={12} /> Delete session
             </button>
           </div>
         </div>

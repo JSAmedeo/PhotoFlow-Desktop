@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown, Flag } from 'lucide-react';
+import { MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { CaptureLocation } from '../data/models';
 
@@ -52,10 +52,11 @@ function LocationSelect({ locations }: { locations: CaptureLocation[] }) {
 
 export function LeftPanel() {
   const { hours, selectedHour, setHour, locations, importQueue } = useApp();
-  const maxCount = Math.max(...hours.map(h => h.count), 1);
+  const maxCount = Math.max(...hours.map(h => h.photoCount), 1);
   const totalSessions = hours.reduce((s, h) => s + h.count, 0);
-  const totalFlagged  = hours.reduce((s, h) => s + h.flagged, 0);
-  const activeImports = importQueue.filter(item => item.status === 'queued' || item.status === 'importing').length;
+  const totalPhotos = hours.reduce((s, h) => s + h.photoCount, 0);
+  const activeImports = importQueue.filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing').length;
+  const operatingDate = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
     <div className="panel left">
@@ -70,7 +71,7 @@ export function LeftPanel() {
           <button className="icon-btn"><ChevronLeft size={14} /></button>
           <div className="row gap-2">
             <Calendar size={13} style={{ color: 'var(--ink-3)' }} />
-            <span style={{ fontWeight: 500, fontSize: 12 }}>Tue, May 13, 2026</span>
+            <span style={{ fontWeight: 500, fontSize: 12 }}>{operatingDate}</span>
           </div>
           <button className="icon-btn"><ChevronRight size={14} /></button>
         </div>
@@ -79,24 +80,28 @@ export function LeftPanel() {
       <div className="panel-section tight">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div className="uppercase">Hourly Folders</div>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{totalSessions} sessions</div>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{totalSessions} sessions · {totalPhotos} photos</div>
         </div>
       </div>
 
       <div className="panel-scroll grow">
+        {hours.length === 0 && (
+          <div style={{ padding: '24px 14px', color: 'var(--ink-4)', fontSize: 11, lineHeight: 1.4 }}>
+            No photos imported today.
+          </div>
+        )}
         {hours.map(h => (
           <div
             key={h.h}
-            className={`hour-row ${selectedHour === h.h ? 'selected' : ''} ${h.count === 0 ? 'empty' : ''}`}
+            className={`hour-row ${selectedHour === h.h ? 'selected' : ''} ${h.isEmpty ? 'empty' : ''}`}
             onClick={() => setHour(h.h)}
           >
             <div className="col">
               <div className="h-time">{h.label}</div>
-              <div className="h-sub">{h.sub}</div>
+              <div className="h-sub">{h.isEmpty ? 'No photos taken' : `${h.count} ${h.count === 1 ? 'session' : 'sessions'} · ${h.photoCount} ${h.photoCount === 1 ? 'photo' : 'photos'}`}</div>
             </div>
             <div className="row gap-2">
-              {h.flagged > 0 && <Flag size={11} style={{ color: 'var(--warn)' }} />}
-              <span className={`badge-count ${selectedHour === h.h ? 'accent' : ''}`}>{h.count}</span>
+              <span className={`badge-count ${selectedHour === h.h ? 'accent' : ''}`}>{h.photoCount}</span>
             </div>
           </div>
         ))}
@@ -104,23 +109,46 @@ export function LeftPanel() {
 
       <div className="panel-section" style={{ borderTop: '1px solid var(--line)', borderBottom: 'none', background: 'var(--bg-1)' }}>
         <div className="uppercase" style={{ marginBottom: 6 }}>Today at a glance</div>
-        <div className="bars" style={{ height: 36, marginBottom: 8 }}>
+        <div className="bars" style={{ height: 36, marginBottom: 4 }}>
           {hours.map((h, i) => (
             <div
               key={i}
               className={`b ${h.h === selectedHour ? 'on' : ''}`}
-              style={{ height: `${Math.max(8, (h.count / maxCount) * 100)}%`, flex: 1 }}
+              style={{ height: `${h.photoCount === 0 ? 8 : Math.max(8, (h.photoCount / maxCount) * 100)}%`, flex: 1, opacity: h.photoCount === 0 ? 0.28 : undefined }}
             />
           ))}
         </div>
+        {hours.length > 0 && (
+          <div style={{ display: 'flex', gap: 2, marginBottom: 8 }}>
+            {hours.map(h => (
+              <div
+                key={h.h}
+                className="mono"
+                title={h.label}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  color: h.h === selectedHour ? 'var(--accent)' : 'var(--ink-5)',
+                  fontSize: 8,
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'clip',
+                }}
+              >
+                {Number(h.h.slice(0, 2))}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div className="col" style={{ lineHeight: 1.2 }}>
             <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{totalSessions}</div>
             <div className="mono" style={{ fontSize: 9, color: 'var(--ink-4)' }}>SESSIONS</div>
           </div>
           <div className="col" style={{ lineHeight: 1.2 }}>
-            <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--warn)' }}>{totalFlagged}</div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--ink-4)' }}>FLAGGED</div>
+            <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{totalPhotos}</div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--ink-4)' }}>PHOTOS</div>
           </div>
           <div className="col" style={{ lineHeight: 1.2 }}>
             <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)' }}>{activeImports}</div>

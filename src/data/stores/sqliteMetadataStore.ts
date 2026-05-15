@@ -75,6 +75,12 @@ type PhotoRow = {
   storage_kind?: PhotoStorageKind | null;
   storage_path?: string | null;
   original_filename?: string | null;
+  source_filename?: string | null;
+  session_key?: string | null;
+  sequence_number?: number | null;
+  sequence_label?: string | null;
+  routing_status?: Photo['routingStatus'] | null;
+  routing_reason?: string | null;
   size_bytes?: number | null;
   last_modified?: number | null;
   source_type?: Photo['sourceType'] | null;
@@ -110,6 +116,10 @@ type ImportQueueRow = {
   source_type?: ImportQueueItem['sourceType'] | null;
   source_path?: string | null;
   source_filename?: string | null;
+  parsed_session_key?: string | null;
+  parsed_sequence_number?: number | null;
+  routing_status?: ImportQueueItem['routingStatus'] | null;
+  routing_reason?: string | null;
   destination_path?: string | null;
   photo_id?: string | null;
   detected_at?: string | null;
@@ -185,6 +195,12 @@ function rowToPhoto(row: PhotoRow): Photo {
     managedOriginalPath: row.managed_original_path ?? undefined,
     importedAt: row.imported_at ?? undefined,
     originalFilename: row.original_filename ?? undefined,
+    sourceFilename: row.source_filename ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    sequenceNumber: row.sequence_number ?? undefined,
+    sequenceLabel: row.sequence_label ?? undefined,
+    routingStatus: row.routing_status ?? undefined,
+    routingReason: row.routing_reason ?? undefined,
     sizeBytes: row.size_bytes ?? undefined,
     lastModified: row.last_modified ?? undefined,
     importedFile,
@@ -206,6 +222,7 @@ function rowToHour(row: HourRow): HourBucket {
     label: row.label,
     sub: row.sub,
     count: row.count,
+    photoCount: row.count,
     flagged: row.flagged,
   };
 }
@@ -222,6 +239,10 @@ function rowToImportQueueItem(row: ImportQueueRow): ImportQueueItem {
     sourceType: row.source_type ?? undefined,
     sourcePath: row.source_path ?? undefined,
     sourceFilename: row.source_filename ?? undefined,
+    parsedSessionKey: row.parsed_session_key ?? undefined,
+    parsedSequenceNumber: row.parsed_sequence_number ?? undefined,
+    routingStatus: row.routing_status ?? undefined,
+    routingReason: row.routing_reason ?? undefined,
     destinationPath: row.destination_path ?? undefined,
     photoId: row.photo_id ?? undefined,
     detectedAt: row.detected_at ?? undefined,
@@ -277,9 +298,10 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       id, session_id, filename, thumbnail_url, display_url, before_image_url, after_image_url,
       created_at, capture_location_id, processing_status, flag, is_favorite, is_hidden,
       operator_notes, enhance_version, width, height, file_size_mb, file_format, original_path,
-      storage_kind, storage_path, original_filename, size_bytes, last_modified,
-      source_type, source_path, managed_original_path, imported_at, imported_file_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+      storage_kind, storage_path, original_filename, source_filename, session_key, sequence_number,
+      sequence_label, routing_status, routing_reason, size_bytes, last_modified, source_type,
+      source_path, managed_original_path, imported_at, imported_file_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
     ON CONFLICT(id) DO UPDATE SET
       session_id = excluded.session_id,
       filename = excluded.filename,
@@ -303,6 +325,12 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       storage_kind = excluded.storage_kind,
       storage_path = excluded.storage_path,
       original_filename = excluded.original_filename,
+      source_filename = excluded.source_filename,
+      session_key = excluded.session_key,
+      sequence_number = excluded.sequence_number,
+      sequence_label = excluded.sequence_label,
+      routing_status = excluded.routing_status,
+      routing_reason = excluded.routing_reason,
       size_bytes = excluded.size_bytes,
       last_modified = excluded.last_modified,
       source_type = excluded.source_type,
@@ -334,6 +362,12 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       photo.storageKind ?? null,
       photo.storagePath ?? null,
       photo.originalFilename ?? null,
+      photo.sourceFilename ?? photo.originalFilename ?? null,
+      photo.sessionKey ?? null,
+      photo.sequenceNumber ?? null,
+      photo.sequenceLabel ?? null,
+      photo.routingStatus ?? null,
+      photo.routingReason ?? null,
       photo.sizeBytes ?? null,
       photo.lastModified ?? null,
       photo.sourceType ?? null,
@@ -433,6 +467,19 @@ export const sqliteMetadataStore: MetadataStore = {
     return rows[0] ? rowToSession(rows[0]) : undefined;
   },
 
+  async getSessionByCode(sessionCode) {
+    const db = await getDatabase();
+    const rows = await db.select<SessionRow[]>('SELECT * FROM sessions WHERE session_code = $1', [sessionCode.toUpperCase()]);
+    return rows[0] ? rowToSession(rows[0]) : undefined;
+  },
+
+  async addSession(session) {
+    const existing = await this.getSessionByCode(session.sessionCode);
+    if (existing) return existing;
+    await upsertSession(session);
+    return session;
+  },
+
   async updateSessionMetadata(id, changes) {
     const session = await this.getSessionById(id);
     if (!session) return undefined;
@@ -442,15 +489,22 @@ export const sqliteMetadataStore: MetadataStore = {
     return updated;
   },
 
+  async deleteSession(sessionId) {
+    const db = await getDatabase();
+    await db.execute('DELETE FROM import_queue WHERE session_id = $1', [sessionId]);
+    await db.execute('DELETE FROM photos WHERE session_id = $1', [sessionId]);
+    await db.execute('DELETE FROM sessions WHERE id = $1', [sessionId]);
+  },
+
   async getPhotos() {
     const db = await getDatabase();
-    const rows = await db.select<PhotoRow[]>('SELECT * FROM photos ORDER BY created_at, id');
+    const rows = await db.select<PhotoRow[]>('SELECT * FROM photos ORDER BY session_id, sequence_number IS NULL, sequence_number, created_at, filename, id');
     return rows.map(rowToPhoto);
   },
 
   async getPhotosBySessionId(sessionId) {
     const db = await getDatabase();
-    const rows = await db.select<PhotoRow[]>('SELECT * FROM photos WHERE session_id = $1 ORDER BY created_at, id', [sessionId]);
+    const rows = await db.select<PhotoRow[]>('SELECT * FROM photos WHERE session_id = $1 ORDER BY sequence_number IS NULL, sequence_number, created_at, filename, id', [sessionId]);
     return rows.map(rowToPhoto);
   },
 
@@ -519,9 +573,10 @@ export const sqliteMetadataStore: MetadataStore = {
     await db.execute(
       `INSERT INTO import_queue (
         id, filename, session_id, status, progress, file_size, last_modified,
-        source_type, source_path, source_filename, destination_path, photo_id, detected_at, imported_at,
+        source_type, source_path, source_filename, parsed_session_key, parsed_sequence_number,
+        routing_status, routing_reason, destination_path, photo_id, detected_at, imported_at,
         error, created_at, completed_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       ON CONFLICT(id) DO UPDATE SET
         filename = excluded.filename,
         session_id = excluded.session_id,
@@ -532,6 +587,10 @@ export const sqliteMetadataStore: MetadataStore = {
         source_type = excluded.source_type,
         source_path = excluded.source_path,
         source_filename = excluded.source_filename,
+        parsed_session_key = excluded.parsed_session_key,
+        parsed_sequence_number = excluded.parsed_sequence_number,
+        routing_status = excluded.routing_status,
+        routing_reason = excluded.routing_reason,
         destination_path = excluded.destination_path,
         photo_id = excluded.photo_id,
         detected_at = excluded.detected_at,
@@ -550,6 +609,10 @@ export const sqliteMetadataStore: MetadataStore = {
         item.sourceType ?? null,
         item.sourcePath ?? null,
         item.sourceFilename ?? null,
+        item.parsedSessionKey ?? null,
+        item.parsedSequenceNumber ?? null,
+        item.routingStatus ?? null,
+        item.routingReason ?? null,
         item.destinationPath ?? null,
         item.photoId ?? null,
         item.detectedAt ?? null,
@@ -570,7 +633,7 @@ export const sqliteMetadataStore: MetadataStore = {
 
   async clearCompletedImports() {
     const db = await getDatabase();
-    await db.execute("DELETE FROM import_queue WHERE status NOT IN ('queued', 'importing')");
+    await db.execute("DELETE FROM import_queue WHERE status NOT IN ('queued', 'stabilizing', 'importing')");
   },
 
   async clearImportQueue() {

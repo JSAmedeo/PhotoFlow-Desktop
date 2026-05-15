@@ -10,7 +10,7 @@ export function GalleryCenter() {
   const {
     sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
-    setTab, filter, setFilter,
+    deleteSessionFromGallery, setTab, filter, setFilter,
   } = useApp();
   const [search, setSearch] = useState('');
 
@@ -112,6 +112,19 @@ export function GalleryCenter() {
                 >
                   <Layers size={11} /> Open in Workshop
                 </button>
+                <button
+                  className="icon-btn"
+                  title={`Delete session ${s.sessionCode}`}
+                  onClick={e => {
+                    e.stopPropagation();
+                    const label = `${s.sessionCode} (${s.photoCount} ${s.photoCount === 1 ? 'photo' : 'photos'})`;
+                    if (window.confirm(`Delete session ${label} from PhotoFlow? Imported files in this session will also be removed from managed storage.`)) {
+                      void deleteSessionFromGallery(s.id);
+                    }
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -120,7 +133,10 @@ export function GalleryCenter() {
                   key={photo.id}
                   onClick={e => {
                     e.stopPropagation();
-                    selectSession(s.id);
+                    if (s.id !== selectedSessionId) {
+                      selectSession(s.id, photo.id);
+                      return;
+                    }
                     if (e.shiftKey) selectPhotoRange(photo.id);
                     else if (e.ctrlKey || e.metaKey) togglePhotoSelection(photo.id);
                     else selectPhoto(photo.id);

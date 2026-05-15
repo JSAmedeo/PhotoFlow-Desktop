@@ -14,6 +14,8 @@ import type {
 import { getPhotoStorageService } from '../storage/photoStorageFactory';
 import { readImageDimensions, type SavedPhotoReference } from '../storage/photoStorage';
 import { initializeMetadataStore, getMetadataStore } from './stores/metadataStoreFactory';
+import { parsePhotoFilename, type ParsedPhotoFilename } from '../ingest/filenameParser';
+import { routePhotoToSession, type SessionRoutingResult } from '../ingest/sessionRoutingService';
 
 function isPhoto(value: Photo | undefined): value is Photo {
   return value !== undefined;
@@ -31,11 +33,6 @@ export async function resetDemoData(): Promise<Session[]> {
   return (await getMetadataStore()).resetDemoData();
 }
 
-export async function freshDesktopReset(): Promise<Session[]> {
-  await getPhotoStorageService().clearManagedPhotoStorage();
-  return (await getMetadataStore()).resetDemoData();
-}
-
 // ----- Sessions --------------------------------------------------------------
 
 export async function getSessions(): Promise<Session[]> {
@@ -46,11 +43,24 @@ export async function getSessionById(id: string): Promise<Session | undefined> {
   return (await getMetadataStore()).getSessionById(id);
 }
 
+export async function getSessionByCode(sessionCode: string): Promise<Session | undefined> {
+  return (await getMetadataStore()).getSessionByCode(sessionCode);
+}
+
 export async function updateSessionMetadata(
   id: string,
   changes: Partial<Pick<Session, 'status' | 'notes' | 'linkedSessionIds' | 'updatedAt'>>,
 ): Promise<Session | undefined> {
   return (await getMetadataStore()).updateSessionMetadata(id, changes);
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const store = await getMetadataStore();
+  const photos = await store.getPhotosBySessionId(sessionId);
+  await store.deleteSession(sessionId);
+
+  const storage = getPhotoStorageService();
+  await Promise.all(photos.map(photo => storage.deletePhotoSource(photo)));
 }
 
 // ----- Photos ----------------------------------------------------------------
@@ -119,10 +129,26 @@ export async function clearImportQueue(): Promise<void> {
   await (await getMetadataStore()).clearImportQueue();
 }
 
-async function isDuplicateImport(sessionId: string, file: File, photos = getPhotos()): Promise<boolean> {
+async function isDuplicateImport(
+  sessionId: string,
+  file: File,
+  parsed?: ParsedPhotoFilename,
+  sourcePath?: string,
+  photos = getPhotos(),
+): Promise<boolean> {
   const resolvedPhotos = await photos;
   return resolvedPhotos.some(photo => {
     if (photo.sessionId !== sessionId) return false;
+    if (sourcePath && photo.sourcePath === sourcePath) return true;
+    if (
+      parsed?.sessionKey &&
+      parsed.sequenceNumber != null &&
+      photo.sessionKey === parsed.sessionKey &&
+      photo.sequenceNumber === parsed.sequenceNumber &&
+      (photo.originalFilename === file.name || photo.sourceFilename === file.name)
+    ) {
+      return true;
+    }
     if (photo.importedFile) {
       return (
         photo.importedFile.filename === file.name &&
@@ -145,6 +171,7 @@ function makeImportedPhoto(
     sourcePath?: string;
     importedAt: string;
   },
+  routing: SessionRoutingResult,
 ): Photo {
   const metadata: ImportedFileMetadata = {
     filename: file.name,
@@ -182,6 +209,12 @@ function makeImportedPhoto(
     managedOriginalPath: savedPhoto.managedOriginalPath ?? savedPhoto.relativePath,
     importedAt: source.importedAt,
     originalFilename: savedPhoto.originalFilename,
+    sourceFilename: file.name,
+    sessionKey: routing.sessionKey ?? session.sessionCode,
+    sequenceNumber: routing.sequenceNumber ?? null,
+    sequenceLabel: routing.sequenceLabel ?? null,
+    routingStatus: routing.status === 'routed' ? 'routed' : 'unrouted',
+    routingReason: routing.reason,
     sizeBytes: savedPhoto.sizeBytes,
     lastModified: file.lastModified,
     importedFile: metadata,
@@ -195,17 +228,74 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '') || 'watched-folder';
 }
 
+function startOfToday(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function hourLabel(hour: number): string {
+  const next = (hour + 1) % 24;
+  const format = (value: number) => {
+    const period = value >= 12 ? 'PM' : 'AM';
+    const twelveHour = value % 12 || 12;
+    return `${twelveHour} ${period}`;
+  };
+  return `${format(hour)} - ${format(next)}`;
+}
+
+function buildHourlyImportBuckets(photos: Photo[]): HourBucket[] {
+  const today = startOfToday();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const buckets = new Map<number, { sessions: Set<string>; photoCount: number }>();
+
+  for (const photo of photos) {
+    if (!photo.importedAt) continue;
+    const importedAt = new Date(photo.importedAt);
+    if (Number.isNaN(importedAt.getTime())) continue;
+    if (importedAt < today || importedAt >= tomorrow) continue;
+
+    const hour = importedAt.getHours();
+    const bucket = buckets.get(hour) ?? { sessions: new Set<string>(), photoCount: 0 };
+    bucket.sessions.add(photo.sessionId);
+    bucket.photoCount += 1;
+    buckets.set(hour, bucket);
+  }
+
+  if (buckets.size === 0) return [];
+
+  const sortedHours = Array.from(buckets.keys()).sort((a, b) => a - b);
+  const firstHour = sortedHours[0];
+  const lastHour = sortedHours[sortedHours.length - 1];
+  const result: HourBucket[] = [];
+
+  for (let hour = firstHour; hour <= lastHour; hour += 1) {
+    const bucket = buckets.get(hour);
+    result.push({
+      h: `${String(hour).padStart(2, '0')}:00`,
+      label: hourLabel(hour),
+      count: bucket?.sessions.size ?? 0,
+      photoCount: bucket?.photoCount ?? 0,
+      isEmpty: !bucket,
+    });
+  }
+
+  return result;
+}
+
 export async function addPhotoToSession(sessionId: string, photo: Photo): Promise<Photo> {
   return (await getMetadataStore()).addPhotoToSession(sessionId, photo);
 }
 
 export async function importPhotosToSession(sessionId: string, files: File[]): Promise<Photo[]> {
-  const session = await getSessionById(sessionId);
-  if (!session) throw new Error('No active session selected.');
+  const fallbackSession = await getSessionById(sessionId);
+  if (!fallbackSession) throw new Error('No active session selected.');
 
   const imported: Photo[] = [];
 
   for (const file of files) {
+    const parsed = parsePhotoFilename(file.name);
     const queueItem: ImportQueueItem = {
       id: `iq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       filename: file.name,
@@ -214,6 +304,11 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       progress: 0,
       fileSize: file.size,
       lastModified: file.lastModified,
+      sourceFilename: file.name,
+      parsedSessionKey: parsed.sessionKey ?? undefined,
+      parsedSequenceNumber: parsed.sequenceNumber,
+      routingStatus: parsed.sessionKey ? undefined : 'unrouted',
+      routingReason: parsed.sessionKey ? undefined : parsed.reason,
       createdAt: new Date().toISOString(),
     };
     await addImportQueueItem(queueItem);
@@ -228,10 +323,31 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       continue;
     }
 
-    if (await isDuplicateImport(sessionId, file)) {
+    const routing = await routePhotoToSession({ parsed, fallbackSessionId: sessionId });
+    await updateImportQueueItem(queueItem.id, {
+      sessionId: routing.sessionId ?? sessionId,
+      routingStatus: routing.status === 'routed' ? 'routed' : 'unrouted',
+      routingReason: routing.reason,
+    });
+
+    if (routing.status !== 'routed' || !routing.session) {
       await updateImportQueueItem(queueItem.id, {
         status: 'skipped',
         progress: 100,
+        routingStatus: 'unrouted',
+        routingReason: routing.reason,
+        error: routing.reason ?? 'Filename did not contain a routable session ID.',
+        completedAt: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    if (await isDuplicateImport(routing.session.id, file, parsed)) {
+      await updateImportQueueItem(queueItem.id, {
+        status: 'skipped',
+        progress: 100,
+        routingStatus: 'routed',
+        routingReason: routing.reason,
         error: 'Already imported for this session.',
         completedAt: new Date().toISOString(),
       });
@@ -243,30 +359,37 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       const photoId = `imp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const importedAt = new Date().toISOString();
       const savedPhoto = await getPhotoStorageService().saveImportedPhoto(file, {
-        sessionKey: session.sessionCode || session.id,
+        sessionKey: routing.session.sessionCode || routing.session.id,
         photoId,
         originalFilename: file.name,
         sourceType: 'manual-picker',
-        captureLocationSlug: slugify(session.captureLocationLabel || session.captureLocationId),
+        captureLocationSlug: slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
         importedAt,
       });
       await updateImportQueueItem(queueItem.id, { progress: 65 });
       const dimensions = await readImageDimensions(savedPhoto.displayUrl);
       await updateImportQueueItem(queueItem.id, { progress: 80 });
-      const photo = await addPhotoToSession(sessionId, makeImportedPhoto(session, file, photoId, savedPhoto, dimensions, {
+      const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, file, photoId, savedPhoto, dimensions, {
         sourceType: 'manual-picker',
         importedAt,
-      }));
+      }, routing));
       imported.push(photo);
       await updateImportQueueItem(queueItem.id, {
         status: 'complete',
         progress: 100,
+        photoId,
+        destinationPath: savedPhoto.managedOriginalPath ?? savedPhoto.relativePath,
+        importedAt,
+        routingStatus: 'routed',
+        routingReason: routing.reason,
         completedAt: new Date().toISOString(),
       });
     } catch (error) {
       await updateImportQueueItem(queueItem.id, {
         status: 'failed',
         progress: 100,
+        routingStatus: 'routing_failed',
+        routingReason: error instanceof Error ? error.message : 'Import failed.',
         error: error instanceof Error ? error.message : 'Import failed.',
         completedAt: new Date().toISOString(),
       });
@@ -282,29 +405,51 @@ export async function importWatchedPhotoToSession(
   sourcePath: string,
   queueItemId?: string,
 ): Promise<Photo | undefined> {
-  const session = await getSessionById(sessionId);
-  if (!session) throw new Error('No active session selected.');
+  const fallbackSession = await getSessionById(sessionId);
+  if (!fallbackSession) throw new Error('No active session selected.');
+  const parsed = parsePhotoFilename(file.name);
+  const routing = await routePhotoToSession({ parsed, fallbackSessionId: sessionId });
+  const targetSessionId = routing.sessionId ?? sessionId;
 
   const queueItem: ImportQueueItem = {
     id: queueItemId ?? `iq-watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     filename: file.name,
-    sessionId,
-    status: 'queued',
-    progress: 0,
+    sessionId: targetSessionId,
+    status: queueItemId ? 'importing' : 'queued',
+    progress: queueItemId ? 25 : 0,
     fileSize: file.size,
     lastModified: file.lastModified,
     sourceType: 'watched-folder',
     sourcePath,
     sourceFilename: file.name,
+    parsedSessionKey: parsed.sessionKey ?? undefined,
+    parsedSequenceNumber: parsed.sequenceNumber,
+    routingStatus: routing.status === 'routed' ? 'routed' : 'unrouted',
+    routingReason: routing.reason,
     detectedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
   };
-  await addImportQueueItem(queueItem);
+  if (queueItemId) await updateImportQueueItem(queueItem.id, queueItem);
+  else await addImportQueueItem(queueItem);
 
-  if (await isDuplicateImport(sessionId, file)) {
+  if (routing.status !== 'routed' || !routing.session) {
     await updateImportQueueItem(queueItem.id, {
       status: 'skipped',
       progress: 100,
+      routingStatus: 'unrouted',
+      routingReason: routing.reason,
+      error: routing.reason ?? 'Filename did not contain a routable session ID.',
+      completedAt: new Date().toISOString(),
+    });
+    return undefined;
+  }
+
+  if (await isDuplicateImport(routing.session.id, file, parsed, sourcePath)) {
+    await updateImportQueueItem(queueItem.id, {
+      status: 'skipped',
+      progress: 100,
+      routingStatus: 'routed',
+      routingReason: routing.reason,
       error: 'Already imported for this session.',
       completedAt: new Date().toISOString(),
     });
@@ -316,27 +461,29 @@ export async function importWatchedPhotoToSession(
     const photoId = `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const importedAt = new Date().toISOString();
     const savedPhoto = await getPhotoStorageService().saveImportedPhoto(file, {
-      sessionKey: session.sessionCode || session.id,
+      sessionKey: routing.session.sessionCode || routing.session.id,
       photoId,
       originalFilename: file.name,
       sourceType: 'watched-folder',
-      captureLocationSlug: slugify(session.captureLocationLabel || session.captureLocationId),
+      captureLocationSlug: slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
       importedAt,
     });
     await updateImportQueueItem(queueItem.id, { progress: 65 });
     const dimensions = await readImageDimensions(savedPhoto.displayUrl);
     await updateImportQueueItem(queueItem.id, { progress: 80 });
-    const photo = await addPhotoToSession(sessionId, makeImportedPhoto(session, file, photoId, savedPhoto, dimensions, {
+    const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, file, photoId, savedPhoto, dimensions, {
       sourceType: 'watched-folder',
       sourcePath,
       importedAt,
-    }));
+    }, routing));
     await updateImportQueueItem(queueItem.id, {
       status: 'complete',
       progress: 100,
       photoId,
       destinationPath: savedPhoto.managedOriginalPath ?? savedPhoto.relativePath,
       importedAt,
+      routingStatus: 'routed',
+      routingReason: routing.reason,
       completedAt: new Date().toISOString(),
     });
     return photo;
@@ -344,6 +491,8 @@ export async function importWatchedPhotoToSession(
     await updateImportQueueItem(queueItem.id, {
       status: 'failed',
       progress: 100,
+      routingStatus: 'routing_failed',
+      routingReason: error instanceof Error ? error.message : 'Watched-folder import failed.',
       error: error instanceof Error ? error.message : 'Watched-folder import failed.',
       completedAt: new Date().toISOString(),
     });
@@ -358,7 +507,7 @@ export async function getLocations(): Promise<CaptureLocation[]> {
 }
 
 export async function getHours(): Promise<HourBucket[]> {
-  return (await getMetadataStore()).getHours();
+  return buildHourlyImportBuckets(await getPhotos());
 }
 
 // ----- Persisted UI state ----------------------------------------------------

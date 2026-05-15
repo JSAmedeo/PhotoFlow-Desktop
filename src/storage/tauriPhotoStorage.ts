@@ -93,12 +93,4 @@ export const tauriPhotoStorage: PhotoStorageService = {
       console.warn('[PhotoFlow] Could not remove managed photo file.', error);
     }
   },
-
-  async clearManagedPhotoStorage(): Promise<void> {
-    try {
-      await remove(WINDOWS_SUPPORT_STORAGE_ROOT, { recursive: true });
-    } catch (error) {
-      console.warn('[PhotoFlow] Could not remove managed storage root. It may not exist yet.', error);
-    }
-  },
 };

@@ -53,11 +53,12 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 3 | Basic Photo Ingest | **COMPLETE** |
 | 4 | Desktop Runtime Foundation | **COMPLETE** |
 | 5 | Local Database Foundation | **COMPLETE** |
-| 6 | Watched Folder Ingest | **CURRENT** |
+| 6 | Watched Folder Ingest | **COMPLETE** |
+| 7 | Filename-Based Session Routing | **CURRENT** |
 
-## Phase 6 — Current Focus
+## Phase 7 — Current Focus
 
-**Goal:** Add desktop-only watched-folder ingest while preserving browser mode, manual import, Tauri managed file storage, and SQLite metadata.
+**Goal:** Route imported photos to sessions automatically from filename session IDs while preserving browser mode, manual import, Tauri managed file storage, watched-folder ingest, Gallery delete flows, and SQLite metadata.
 
 **Runtime modes:**
 - Browser mode: `npm run dev`
@@ -69,10 +70,18 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 - Tauri mode stores sessions/photos/import queue/app state metadata in SQLite.
 - UI components should not import Tauri SQL or filesystem APIs.
 - Watched-folder service owns file watching and hands stable candidates to the auto-import pipeline.
+- Filename parsing belongs in `src/ingest/filenameParser.ts`, not UI components.
+- Session auto-routing belongs in `src/ingest/sessionRoutingService.ts` and the repository/metadata-store boundary.
+- Hourly folders are derived from current-day import timestamps, start empty before imports, and do not use photo capture metadata.
+- Old app-local imported photo path compatibility was intentionally removed; keep the fresh storage root at `C:\PhotoFlow Desktop`.
+- Fresh desktop reset was removed in Phase 7; use Gallery session/photo deletion for cleanup instead of wiping `C:\PhotoFlow Desktop`.
 
-**Hard rules for Phase 6:**
-- Build only the scoped watched-folder ingest workflow.
-- Do not build DSLR SDK, Canon SDK, tethering, FTP ingest, face matching, print package routing, archive movement, or source cleanup.
+**Hard rules for Phase 7:**
+- Build only filename-based session routing.
+- Operators should not manually create sessions from selected imported photos.
+- Do not implement capture-location parsing or manual capture-location assignment.
+- Do not activate full Processing Queue logic.
+- Do not build DSLR SDK, Canon SDK, tethering, face matching, print package routing, archive movement, or old app-local path compatibility.
 - Do not add AI/rembg processing.
 - Do not add cloud upload.
 - Do not add print workflows.

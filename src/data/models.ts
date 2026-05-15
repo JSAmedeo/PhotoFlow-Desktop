@@ -9,6 +9,7 @@ export type FilterKey = 'All' | 'Flagged' | 'Processed' | 'Pending';
 export type ImportStatus = 'queued' | 'stabilizing' | 'importing' | 'complete' | 'skipped' | 'failed';
 export type PhotoStorageKind = 'demo-asset' | 'browser-data-url' | 'tauri-managed-file';
 export type ImportSourceType = 'manual-picker' | 'watched-folder';
+export type RoutingStatus = 'routed' | 'unrouted' | 'routing_failed';
 export type WatcherStatus = 'desktop-only' | 'off' | 'watching' | 'importing' | 'error';
 
 export interface CaptureLocation {
@@ -62,6 +63,12 @@ export interface Photo {
   managedOriginalPath?: string;
   importedAt?: string;
   originalFilename?: string;
+  sourceFilename?: string;
+  sessionKey?: string;
+  sequenceNumber?: number | null;
+  sequenceLabel?: string | null;
+  routingStatus?: RoutingStatus;
+  routingReason?: string;
   sizeBytes?: number;
   lastModified?: number;
   importedFile?: ImportedFileMetadata;
@@ -85,6 +92,10 @@ export interface ImportQueueItem {
   sourceType?: ImportSourceType;
   sourcePath?: string;
   sourceFilename?: string;
+  parsedSessionKey?: string;
+  parsedSequenceNumber?: number | null;
+  routingStatus?: RoutingStatus;
+  routingReason?: string;
   destinationPath?: string;
   photoId?: string;
   detectedAt?: string;
@@ -113,9 +124,11 @@ export interface WatcherRuntimeState {
 export interface HourBucket {
   h: string;       // "14:00"
   label: string;   // "2 – 3 PM"
-  sub: string;     // "Afternoon"
-  count: number;
-  flagged: number;
+  count: number;   // unique sessions imported in this hour
+  photoCount: number;
+  isEmpty?: boolean;
+  sub?: string;
+  flagged?: number;
 }
 
 export const HOUR_SHORT: Record<string, string> = {

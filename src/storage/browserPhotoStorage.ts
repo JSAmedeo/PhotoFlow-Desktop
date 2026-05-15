@@ -33,8 +33,4 @@ export const browserPhotoStorage: PhotoStorageService = {
   async deletePhotoSource() {
     // Browser imports are embedded in metadata as data URLs, so deleting metadata removes the payload.
   },
-
-  async clearManagedPhotoStorage() {
-    // Browser mode has no managed filesystem storage.
-  },
 };

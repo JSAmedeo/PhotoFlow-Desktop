@@ -113,18 +113,24 @@ Not persisted (resets on refresh): zoom level, active tool, before/after split p
 
 ## Local import workflow
 
-Open the **Session Workshop** tab, choose the destination session, then use **Local Ingest → Import Photos** in the right panel. The picker accepts multiple `image/*` files.
+Open the **Session Workshop** tab, then use **Local Ingest → Import Photos** in the right panel. The picker accepts multiple `image/*` files.
 
 When photos are imported:
-- each valid file becomes a `Photo` record in the active session
+- each valid routed file becomes a `Photo` record in the parsed filename session
 - imported thumbnails appear in Gallery, Workshop thumbnails, the selected preview, and the before/after compare area
-- exact duplicates in the same session are skipped by filename, file size, and last modified time
+- exact duplicates in the same routed session are skipped by filename, file size, last modified time, watched source path, and sequence number where available
 - unsupported files and storage failures are shown in the import queue
-- the active session photo count is updated immediately
+- the routed session photo count is updated immediately
 
 In browser mode, imported images are stored as base64/data URLs in browser `localStorage`. Browser metadata also uses `localStorage`. This is intentionally demo-scale storage. Large batches or large photos can hit browser storage limits.
 
 In Tauri desktop mode, imported image bytes are copied into managed storage under `C:\PhotoFlow Desktop`. Photo/session metadata is stored in SQLite using `sqlite:photoflow.db`. SQLite stores metadata and file references only, not original image blobs.
+
+Phase 7 adds filename-based session routing. Filenames containing the first valid `[A-Z]{3}\d{6}` session ID are routed automatically, with lowercase keys normalized to uppercase. Supported sequence patterns near the session ID, such as `XYZ123456_01.jpg`, `XYZ123456-001.jpg`, and `IMG_4021_XYZ123456_05.jpg`, preserve sequence metadata for display ordering. Operators should not manually create sessions from selected imported photos; sessions are created automatically from parsed filename session IDs.
+
+Files without a valid session ID are treated as unrouted exceptions and are skipped/marked for review instead of silently attaching to the wrong session.
+
+Hourly folders in the left panel are based on current-day import time, not photo capture metadata. The panel starts empty for a day with no imports, creates/fills hour folders as photos import, shows skipped hours between import hours as no-photo gaps, and reports both session and photo totals. Today at a glance uses the same current-day hourly folder data.
 
 Watched-folder imports use the organized managed path:
 
@@ -155,20 +161,13 @@ Migrations run safely during startup. If the SQLite database has no sessions, th
 
 Call `resetDemoData()` from `repository.ts`. In browser mode it clears PhotoFlow `localStorage` metadata and re-seeds. In Tauri mode it clears and re-seeds SQLite metadata. The context's `resetDemo()` action calls this and refreshes UI state without a page reload, including clearing imported photo metadata and the import queue.
 
-Desktop mode also includes a **Fresh desktop reset** action in the Local Ingest panel. This is intended for setup/testing support. It:
-
-- stops the watcher
-- deletes `C:\PhotoFlow Desktop`
-- clears and reseeds SQLite metadata
-- resets the UI back to the demo sessions/photos
-
-It does not delete the watched FTP/intake folder.
+The previous Fresh desktop reset control was removed in Phase 7 after session/photo delete flows were added. Operators should delete unwanted sessions from Gallery instead of wiping the managed desktop storage root.
 
 ## What to check visually
 
 - **Gallery tab:** Session list updates reflect real data; flag/favorite toggles persist on refresh
 - **Session Workshop tab:** Photo strip shows real photo count per session; active session header shows real metadata
-- **Left panel:** Hour counts and flagged counts come from seed data
+- **Left panel:** Hourly folders reflect today's import-time sessions/photos; skipped import hours show as empty
 - **Status bar:** Session code and photo count reflect the selected session
 
 ## Intentionally not implemented yet
@@ -193,6 +192,8 @@ PHASE_5_ACCEPTANCE_CHECKLIST.md
 PHASE_5_LOCAL_DATABASE.md
 PHASE_6_ACCEPTANCE_CHECKLIST.md
 PHASE_6_WATCHED_FOLDER_INGEST.md
+PHASE_7_ACCEPTANCE_CHECKLIST.md
+PHASE_7_FILENAME_SESSION_ROUTING.md
 src-tauri/            ← Tauri v2 desktop runtime shell
 src/
   components/         ← shared UI primitives

@@ -22,7 +22,6 @@ export interface PhotoStorageService {
   saveImportedPhoto(file: File, context: SavePhotoContext): Promise<SavedPhotoReference>;
   resolvePhotoSource(photo: Photo): Promise<string>;
   deletePhotoSource(photo: Photo): Promise<void>;
-  clearManagedPhotoStorage(): Promise<void>;
 }
 
 export const FALLBACK_PHOTO_SOURCE = '/demo-assets/before.jpg';

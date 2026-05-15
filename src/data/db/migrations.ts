@@ -39,4 +39,23 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_import_queue_source_path ON import_queue(source_path)',
     ],
   },
+  {
+    id: 3,
+    name: 'filename_session_routing_metadata',
+    statements: [
+      'ALTER TABLE photos ADD COLUMN source_filename TEXT',
+      'ALTER TABLE photos ADD COLUMN session_key TEXT',
+      'ALTER TABLE photos ADD COLUMN sequence_number INTEGER',
+      'ALTER TABLE photos ADD COLUMN sequence_label TEXT',
+      'ALTER TABLE photos ADD COLUMN routing_status TEXT',
+      'ALTER TABLE photos ADD COLUMN routing_reason TEXT',
+      'ALTER TABLE import_queue ADD COLUMN parsed_session_key TEXT',
+      'ALTER TABLE import_queue ADD COLUMN parsed_sequence_number INTEGER',
+      'ALTER TABLE import_queue ADD COLUMN routing_status TEXT',
+      'ALTER TABLE import_queue ADD COLUMN routing_reason TEXT',
+      'CREATE INDEX IF NOT EXISTS idx_photos_session_key ON photos(session_key)',
+      'CREATE INDEX IF NOT EXISTS idx_photos_sequence_number ON photos(sequence_number)',
+      'CREATE INDEX IF NOT EXISTS idx_import_queue_routing_status ON import_queue(routing_status)',
+    ],
+  },
 ];

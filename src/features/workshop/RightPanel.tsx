@@ -42,7 +42,6 @@ export function RightPanel() {
     watcherRuntime,
     chooseWatchedFolder,
     updateWatchedFolderSettings,
-    freshDesktopReset,
   } = useApp();
   const [bgModel,     setBgModel]     = useState('Local Service - General Model');
   const [sensitivity, setSensitivity] = useState(72);
@@ -179,18 +178,6 @@ export function RightPanel() {
               <span style={{ color: 'var(--ink-3)' }}>Formats</span>
               <span className="mono" style={{ color: 'var(--ink-2)' }}>image/* · demo storage</span>
             </div>
-            {watcherRuntime.status !== 'desktop-only' && (
-              <button
-                className="btn ghost block"
-                onClick={() => {
-                  if (window.confirm('Fresh desktop reset will delete C:\\PhotoFlow Desktop and reset PhotoFlow metadata to demo state. Continue?')) {
-                    void freshDesktopReset();
-                  }
-                }}
-              >
-                <Trash2 size={13} /> Fresh desktop reset
-              </button>
-            )}
             <div style={{ height: 1, background: 'var(--line-soft)', margin: '2px 0' }} />
             <SectionHead
               label="Watched Folder"

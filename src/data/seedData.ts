@@ -13,18 +13,18 @@ export const SEED_LOCATIONS: CaptureLocation[] = [
 ];
 
 export const SEED_HOURS: HourBucket[] = [
-  { h: '08:00', label: '8 – 9 AM',   sub: 'Open',       count: 14, flagged: 0 },
-  { h: '09:00', label: '9 – 10 AM',  sub: 'Morning',    count: 32, flagged: 2 },
-  { h: '10:00', label: '10 – 11 AM', sub: 'Morning',    count: 48, flagged: 1 },
-  { h: '11:00', label: '11 – 12 PM', sub: 'Late AM',    count: 54, flagged: 3 },
-  { h: '12:00', label: '12 – 1 PM',  sub: 'Midday',     count: 61, flagged: 4 },
-  { h: '13:00', label: '1 – 2 PM',   sub: 'Lunch peak', count: 72, flagged: 5 },
-  { h: '14:00', label: '2 – 3 PM',   sub: 'Afternoon',  count: 58, flagged: 2 },
-  { h: '15:00', label: '3 – 4 PM',   sub: 'Afternoon',  count: 46, flagged: 1 },
-  { h: '16:00', label: '4 – 5 PM',   sub: 'Late PM',    count: 41, flagged: 2 },
-  { h: '17:00', label: '5 – 6 PM',   sub: 'Wind down',  count: 28, flagged: 0 },
-  { h: '18:00', label: '6 – 7 PM',   sub: 'Evening',    count: 12, flagged: 0 },
-  { h: '19:00', label: '7 – 8 PM',   sub: 'Close',      count:  5, flagged: 0 },
+  { h: '08:00', label: '8 – 9 AM',   sub: 'Open',       count: 14, photoCount: 14, flagged: 0 },
+  { h: '09:00', label: '9 – 10 AM',  sub: 'Morning',    count: 32, photoCount: 32, flagged: 2 },
+  { h: '10:00', label: '10 – 11 AM', sub: 'Morning',    count: 48, photoCount: 48, flagged: 1 },
+  { h: '11:00', label: '11 – 12 PM', sub: 'Late AM',    count: 54, photoCount: 54, flagged: 3 },
+  { h: '12:00', label: '12 – 1 PM',  sub: 'Midday',     count: 61, photoCount: 61, flagged: 4 },
+  { h: '13:00', label: '1 – 2 PM',   sub: 'Lunch peak', count: 72, photoCount: 72, flagged: 5 },
+  { h: '14:00', label: '2 – 3 PM',   sub: 'Afternoon',  count: 58, photoCount: 58, flagged: 2 },
+  { h: '15:00', label: '3 – 4 PM',   sub: 'Afternoon',  count: 46, photoCount: 46, flagged: 1 },
+  { h: '16:00', label: '4 – 5 PM',   sub: 'Late PM',    count: 41, photoCount: 41, flagged: 2 },
+  { h: '17:00', label: '5 – 6 PM',   sub: 'Wind down',  count: 28, photoCount: 28, flagged: 0 },
+  { h: '18:00', label: '6 – 7 PM',   sub: 'Evening',    count: 12, photoCount: 12, flagged: 0 },
+  { h: '19:00', label: '7 – 8 PM',   sub: 'Close',      count:  5, photoCount:  5, flagged: 0 },
 ];
 
 export const SEED_SESSIONS: Session[] = [

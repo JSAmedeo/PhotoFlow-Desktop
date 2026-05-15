@@ -127,7 +127,7 @@ Add SQLite metadata persistence for Tauri desktop mode while preserving browser 
 - Phase 4 file storage remains responsible for imported image files
 - SQLite stores metadata and file references only, not original image blobs
 
-## Phase 6 — Watched Folder Ingest (CURRENT)
+## Phase 6 — Watched Folder Ingest (COMPLETE)
 
 Add desktop-only watched-folder ingest:
 
@@ -139,6 +139,27 @@ Add desktop-only watched-folder ingest:
 - SQLite photo/import queue metadata for watched-folder imports
 - visible watcher controls in the Local Ingest panel
 - browser mode remains manual-import only and shows watcher as desktop-only
+
+The Fresh desktop reset control was removed in Phase 7 after Gallery session deletion became available. Operators should delete unwanted sessions/photos through Gallery instead of wiping the managed desktop storage root. Previous app-local imported photo path compatibility was intentionally removed and should not be reintroduced unless explicitly requested.
+
+## Phase 7 — Filename-Based Session Routing (CURRENT)
+
+Add deterministic filename-based session routing:
+
+- parse the first valid `[A-Z]{3}\d{6}` session ID from import filenames
+- normalize parsed session keys to uppercase
+- parse nearby sequence numbers such as `_01`, `-001`, or ` 03`
+- automatically find/create sessions from parsed filename session IDs
+- route browser manual import, Tauri manual import, and Tauri watched-folder import through the same routing service
+- persist route/sequence metadata in browser localStorage and SQLite metadata stores
+- sort photos in sessions by sequence number where present, then created/imported time and filename
+- keep unrouted files visible as skipped/unrouted exceptions instead of assigning them to the active session
+- derive hourly folders and Today at a glance from current-day import timestamps, not photo capture metadata
+- keep skipped import hours visible as empty no-photo hours between active import hours
+
+Capture location parsing and manual capture-location assignment are deferred. Future mobile app metadata should supply capture-location data.
+
+The Processing Queue panel exists, but full processing queue logic and AI/rembg/background processing are deferred.
 
 Still out of scope unless explicitly reintroduced:
 

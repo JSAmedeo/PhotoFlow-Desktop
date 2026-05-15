@@ -22,7 +22,7 @@ import {
   getActiveTab,         setActiveTab,
   getSelectedHour,      setSelectedHour,
   resetDemoData,
-  freshDesktopReset as repoFreshDesktopReset,
+  deleteSession as repoDeleteSession,
   updatePhotoMetadata as repoUpdatePhoto,
   deletePhotos as repoDeletePhotos,
   getImportQueue,
@@ -55,12 +55,13 @@ interface AppState {
 }
 
 interface AppActions {
-  selectSession:   (id: string) => void;
+  selectSession:   (id: string, preferredPhotoId?: string) => void;
   selectPhoto:     (id: string) => void;
   togglePhotoSelection: (id: string) => void;
   selectPhotoRange: (id: string) => void;
   clearPhotoSelection: () => void;
   deleteSelectedPhotos: () => Promise<void>;
+  deleteSessionFromGallery: (sessionId: string) => Promise<void>;
   setTab:          (tab: TabKey) => void;
   setHour:         (h: string) => void;
   setFilter:       (f: FilterKey) => void;
@@ -71,7 +72,6 @@ interface AppActions {
   clearImportQueue: () => void;
   chooseWatchedFolder: () => Promise<void>;
   updateWatchedFolderSettings: (changes: Partial<WatchedFolderSettings>) => Promise<void>;
-  freshDesktopReset: () => Promise<void>;
   resetDemo:       () => void;
 }
 
@@ -188,6 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessions(await getSessions());
     setAllPhotos(resolved.allPhotos);
     setPhotos(resolved.photos);
+    setHours(await getHours());
     setImportQueue(await getImportQueue());
   }, [selectedSessionId]);
 
@@ -213,12 +214,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [isLoading, refreshData, selectedSessionId, watchedFolderSettings]);
 
-  const selectSession = useCallback((id: string) => {
+  const selectSession = useCallback((id: string, preferredPhotoId?: string) => {
     void (async () => {
       setSession(id);
       await setSelectedSessionId(id);
-      const firstPhoto = (await getPhotosBySessionId(id))[0];
-      const photoId = firstPhoto?.id ?? '';
+      const sessionPhotos = await getPhotosBySessionId(id);
+      const preferredPhoto = preferredPhotoId
+        ? sessionPhotos.find(photo => photo.id === preferredPhotoId)
+        : undefined;
+      const photoId = preferredPhoto?.id ?? sessionPhotos[0]?.id ?? '';
       setPhoto(photoId);
       setSelectedPhotoIds(photoId ? [photoId] : []);
       await setSelectedPhotoId(photoId);
@@ -295,8 +299,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const importPhotosToActiveSession = useCallback(async (files: File[]) => {
     if (!selectedSessionId || files.length === 0) return;
     const imported = await repoImportPhotos(selectedSessionId, files);
-    await refreshData(selectedSessionId);
     const firstImported = imported[0];
+    const nextSessionId = firstImported?.sessionId ?? selectedSessionId;
+    if (nextSessionId !== selectedSessionId) {
+      setSession(nextSessionId);
+      await setSelectedSessionId(nextSessionId);
+    }
+    await refreshData(nextSessionId);
     if (firstImported) {
       setPhoto(firstImported.id);
       await setSelectedPhotoId(firstImported.id);
@@ -329,6 +338,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await setSelectedPhotoId(nextPhotoId);
     await refreshData(selectedSessionId);
   }, [refreshData, selectedPhotoId, selectedPhotoIds, selectedSessionId]);
+
+  const deleteSessionFromGallery = useCallback(async (sessionId: string) => {
+    const remainingSessions = sessions.filter(session => session.id !== sessionId);
+    const nextSessionId = selectedSessionId === sessionId
+      ? remainingSessions[0]?.id ?? ''
+      : selectedSessionId;
+
+    await repoDeleteSession(sessionId);
+
+    const firstPhoto = nextSessionId ? (await getPhotosBySessionId(nextSessionId))[0] : undefined;
+    const nextPhotoId = firstPhoto?.id ?? '';
+    setSession(nextSessionId);
+    setPhoto(nextPhotoId);
+    setSelectedPhotoIds(nextPhotoId ? [nextPhotoId] : []);
+    await setSelectedSessionId(nextSessionId);
+    await setSelectedPhotoId(nextPhotoId);
+    setHours(await getHours());
+    await refreshData(nextSessionId);
+  }, [refreshData, selectedSessionId, sessions]);
 
   const updateWatchedFolderSettings = useCallback(async (changes: Partial<WatchedFolderSettings>) => {
     const next = { ...watchedFolderSettings, ...changes };
@@ -384,34 +412,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const freshDesktopReset = useCallback(async () => {
-    await stopWatchedFolder();
-    setWatcherRuntime({ status: isTauriRuntime() ? 'off' : 'desktop-only' });
-    const freshSessions = await repoFreshDesktopReset();
-    await applyFreshDemoState(freshSessions, {
-      setSessions,
-      setSession,
-      setPhoto,
-      setSelectedPhotoIds,
-      setPhotos,
-      setAllPhotos,
-      setLocations,
-      setHours,
-      setImportQueue,
-      setWatchedFolderSettingsState,
-      setTabState,
-      setHourState,
-      setFilterState,
-    });
-  }, []);
-
   const value: AppContextValue = {
     sessions, allPhotos, photos, locations, hours, importQueue,
     selectedSessionId, selectedPhotoId, selectedPhotoIds, activeTab, selectedHour, filter,
     watchedFolderSettings, watcherRuntime, isLoading,
-    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, setTab, setHour, setFilter,
+    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setFilter,
     toggleFavorite, toggleFlag, importPhotosToActiveSession, clearCompletedImports, clearImportQueue,
-    chooseWatchedFolder, updateWatchedFolderSettings, freshDesktopReset, resetDemo,
+    chooseWatchedFolder, updateWatchedFolderSettings, resetDemo,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

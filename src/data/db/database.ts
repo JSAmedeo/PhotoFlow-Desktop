@@ -26,6 +26,11 @@ async function hasMigration(db: Database, id: number): Promise<boolean> {
   }
 }
 
+function isBenignMigrationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate column name/i.test(message) || /already exists/i.test(message);
+}
+
 export async function runMigrations(): Promise<void> {
   const db = await getDatabase();
 
@@ -34,7 +39,11 @@ export async function runMigrations(): Promise<void> {
 
     try {
       for (const statement of migration.statements) {
-        await db.execute(statement);
+        try {
+          await db.execute(statement);
+        } catch (error) {
+          if (!isBenignMigrationError(error)) throw error;
+        }
       }
       await db.execute(
         'INSERT OR IGNORE INTO schema_migrations (id, name, applied_at) VALUES ($1, $2, $3)',

@@ -21,6 +21,7 @@ import {
   SEED_PHOTOS,
   SEED_SESSIONS,
 } from '../seedData';
+import { comparePhotosForDisplay } from '../photoSorting';
 import type { MetadataStore } from './metadataStore';
 
 const DEFAULT_WATCHED_FOLDER_SETTINGS: WatchedFolderSettings = {
@@ -56,6 +57,23 @@ export const browserMetadataStore: MetadataStore = {
     return (await this.getSessions()).find(session => session.id === id);
   },
 
+  async getSessionByCode(sessionCode: string) {
+    const normalized = sessionCode.toUpperCase();
+    return (await this.getSessions()).find(session => session.sessionCode.toUpperCase() === normalized);
+  },
+
+  async addSession(session) {
+    const sessions = await this.getSessions();
+    const existing = sessions.find(candidate => (
+      candidate.id === session.id ||
+      candidate.sessionCode.toUpperCase() === session.sessionCode.toUpperCase()
+    ));
+    if (existing) return existing;
+
+    storeSet(STORE_KEYS.sessions, [...sessions, session]);
+    return session;
+  },
+
   async updateSessionMetadata(id, changes) {
     const sessions = await this.getSessions();
     const idx = sessions.findIndex(session => session.id === id);
@@ -66,8 +84,18 @@ export const browserMetadataStore: MetadataStore = {
     return sessions[idx];
   },
 
+  async deleteSession(sessionId) {
+    const sessions = await this.getSessions();
+    const photos = await this.getPhotos();
+    const queue = await this.getImportQueue();
+
+    storeSet(STORE_KEYS.sessions, sessions.filter(session => session.id !== sessionId));
+    storeSet(STORE_KEYS.photos, photos.filter(photo => photo.sessionId !== sessionId));
+    storeSet(STORE_KEYS.importQueue, queue.filter(item => item.sessionId !== sessionId));
+  },
+
   async getPhotos() {
-    return storeGet<Photo[]>(STORE_KEYS.photos) ?? [];
+    return [...(storeGet<Photo[]>(STORE_KEYS.photos) ?? [])].sort(comparePhotosForDisplay);
   },
 
   async getPhotosBySessionId(sessionId: string) {
@@ -153,7 +181,7 @@ export const browserMetadataStore: MetadataStore = {
   },
 
   async clearCompletedImports() {
-    const active = (await this.getImportQueue()).filter(item => item.status === 'queued' || item.status === 'importing');
+    const active = (await this.getImportQueue()).filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing');
     storeSet(STORE_KEYS.importQueue, active);
   },
 

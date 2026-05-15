@@ -12,10 +12,13 @@ export interface MetadataStore {
   initialize(): Promise<void>;
   getSessions(): Promise<Session[]>;
   getSessionById(id: string): Promise<Session | undefined>;
+  getSessionByCode(sessionCode: string): Promise<Session | undefined>;
+  addSession(session: Session): Promise<Session>;
   updateSessionMetadata(
     id: string,
     changes: Partial<Pick<Session, 'status' | 'notes' | 'linkedSessionIds' | 'updatedAt'>>,
   ): Promise<Session | undefined>;
+  deleteSession(sessionId: string): Promise<void>;
   getPhotos(): Promise<Photo[]>;
   getPhotosBySessionId(sessionId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
