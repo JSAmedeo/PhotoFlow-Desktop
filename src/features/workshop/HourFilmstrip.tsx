@@ -1,19 +1,47 @@
+import { useMemo } from 'react';
 import { Filter, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
-import { HOUR_SHORT } from '../../data/models';
 
 export function HourFilmstrip() {
-  const { sessions, allPhotos, selectedSessionId, selectSession, selectedHour } = useApp();
-  const short = HOUR_SHORT[selectedHour] ?? selectedHour;
-  const totalImages = sessions.reduce((sum, s) => sum + s.photoCount, 0);
+  const { sessions, allPhotos, selectedSessionId, selectSession, selectedHour, selectedLocationId, hours } = useApp();
+
+  const sessionIdsInSelectedHour = useMemo(() => {
+    if (hours.length === 0) return null;
+    const hourNum = parseInt(selectedHour, 10);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfTomorrow = startOfToday + 86_400_000;
+    const set = new Set<string>();
+    for (const photo of allPhotos) {
+      if (!photo.importedAt) continue;
+      const t = new Date(photo.importedAt).getTime();
+      if (isNaN(t) || t < startOfToday || t >= startOfTomorrow) continue;
+      if (new Date(t).getHours() === hourNum) set.add(photo.sessionId);
+    }
+    return set;
+  }, [allPhotos, hours.length, selectedHour]);
+
+  const filtered = sessions.filter(s => {
+    const matchHour = !sessionIdsInSelectedHour || sessionIdsInSelectedHour.has(s.id);
+    const matchLocation = !selectedLocationId || s.captureLocationId === selectedLocationId;
+    return matchHour && matchLocation;
+  });
+
+  const hourLabel =
+    selectedHour.slice(0, 2) === '00' ? '12 AM' :
+    parseInt(selectedHour) < 12 ? `${parseInt(selectedHour)} AM` :
+    parseInt(selectedHour) === 12 ? '12 PM' :
+    `${parseInt(selectedHour) - 12} PM`;
+
+  const totalImages = filtered.reduce((sum, s) => sum + s.photoCount, 0);
 
   return (
     <div style={{ borderTop: '1px solid var(--line)', background: 'var(--bg-1)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       <div className="row" style={{ padding: '6px 14px', borderBottom: '1px solid var(--line-soft)', gap: 10 }}>
-        <span className="uppercase">{short} Sessions</span>
+        <span className="uppercase">{sessionIdsInSelectedHour ? hourLabel : 'All'} Sessions</span>
         <span className="mono pill" style={{ fontSize: 10 }}>
-          {sessions.length} sessions · {totalImages} images
+          {filtered.length} sessions · {totalImages} images
         </span>
         <div className="grow" />
         <div className="row gap-2">
@@ -26,7 +54,7 @@ export function HourFilmstrip() {
       </div>
 
       <div style={{ display: 'flex', overflowX: 'auto', padding: '10px 14px', gap: 0, alignItems: 'stretch' }}>
-        {sessions.map((s, si) => (
+        {filtered.map((s, si) => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'stretch' }}>
             {si > 0 && <div style={{ width: 1, background: 'var(--line)', margin: '0 10px', flexShrink: 0 }} />}
             <div
