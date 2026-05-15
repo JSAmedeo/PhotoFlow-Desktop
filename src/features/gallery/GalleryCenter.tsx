@@ -9,6 +9,7 @@ import type { FilterKey } from '../../data/models';
 export function GalleryCenter() {
   const {
     sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
+    selectedLocationId, locations,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
     deleteSessionFromGallery, setTab, filter, setFilter,
   } = useApp();
@@ -17,14 +18,17 @@ export function GalleryCenter() {
   const short = HOUR_SHORT[selectedHour] ?? selectedHour;
   const totalImages = sessions.reduce((sum, s) => sum + s.photoCount, 0);
 
+  const activeLocation = selectedLocationId ? locations.find(l => l.id === selectedLocationId) : undefined;
+
   const filtered = sessions.filter(s => {
+    const matchLocation = !selectedLocationId || s.captureLocationId === selectedLocationId;
     const matchSearch = s.sessionCode.toLowerCase().includes(search.toLowerCase());
     const matchFilter =
       filter === 'All'       ? true :
       filter === 'Flagged'   ? s.status === 'flagged' :
       filter === 'Processed' ? s.status === 'complete' :
       filter === 'Pending'   ? s.status === 'active' : true;
-    return matchSearch && matchFilter;
+    return matchLocation && matchSearch && matchFilter;
   });
 
   return (
@@ -33,9 +37,12 @@ export function GalleryCenter() {
       <div className="row" style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)', background: 'var(--bg-1)', gap: 10 }}>
         <div className="row gap-2">
           <span className="uppercase">Gallery</span>
-          <span className="mono pill accent">{short}</span>
+          {activeLocation && (
+            <span className="mono pill accent">{activeLocation.name}</span>
+          )}
+          {!activeLocation && <span className="mono pill accent">{short}</span>}
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>
-            {sessions.length} sessions · {totalImages} images
+            {filtered.length}{sessions.length !== filtered.length ? `/${sessions.length}` : ''} sessions · {totalImages} images
           </span>
         </div>
         <div className="grow" />

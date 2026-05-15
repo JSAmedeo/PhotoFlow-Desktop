@@ -1,24 +1,30 @@
 import { useState } from 'react';
-import { MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { CaptureLocation } from '../data/models';
 
-function LocationSelect({ locations }: { locations: CaptureLocation[] }) {
-  const [loc, setLoc] = useState<CaptureLocation>(locations[1] ?? locations[0]);
+function LocationSelect({ locations, selectedId, onSelect }: {
+  locations: CaptureLocation[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const selected = locations.find(l => l.id === selectedId);
 
   return (
     <div style={{ position: 'relative' }}>
       <div className="select-ctrl" onClick={() => setOpen(o => !o)}>
         <div className="row gap-2">
-          <MapPin size={13} style={{ color: 'var(--accent)' }} />
+          <MapPin size={13} style={{ color: selected ? 'var(--accent)' : 'var(--ink-4)' }} />
           <div className="col" style={{ lineHeight: 1.15 }}>
-            <div style={{ fontSize: 12, fontWeight: 500 }}>{loc.name}</div>
-            <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{loc.code} · Encounter</div>
+            <div style={{ fontSize: 12, fontWeight: 500 }}>{selected?.name ?? 'All Locations'}</div>
+            <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>
+              {selected ? `${selected.code} · ${selected.isActive ? 'active' : 'paused'}` : 'Showing all streams'}
+            </div>
           </div>
         </div>
         <div className="row gap-2">
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ok)', display: 'inline-block' }} />
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: selected?.isActive ? 'var(--ok)' : 'var(--ink-5)', display: 'inline-block' }} />
           <ChevronDown size={13} />
         </div>
       </div>
@@ -28,20 +34,37 @@ function LocationSelect({ locations }: { locations: CaptureLocation[] }) {
           background: 'var(--bg-3)', border: '1px solid var(--line)', borderRadius: 3,
           zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
         }}>
+          <div
+            onClick={() => { onSelect(''); setOpen(false); }}
+            style={{
+              padding: '7px 9px', fontSize: 11.5,
+              color: !selectedId ? 'var(--accent)' : 'var(--ink-2)',
+              cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              borderBottom: '1px solid var(--line-soft)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-4)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <span>All Locations</span>
+            {!selectedId && <Check size={11} style={{ color: 'var(--accent)' }} />}
+          </div>
           {locations.map(o => (
             <div
               key={o.id}
-              onClick={() => { setLoc(o); setOpen(false); }}
+              onClick={() => { onSelect(o.id); setOpen(false); }}
               style={{
                 padding: '7px 9px', fontSize: 11.5,
-                color: o.id === loc.id ? 'var(--accent)' : 'var(--ink-2)',
-                cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
+                color: o.id === selectedId ? 'var(--accent)' : 'var(--ink-2)',
+                cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-4)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               <span>{o.name}</span>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{o.code}</span>
+              <div className="row gap-2">
+                <span className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{o.code}</span>
+                {o.id === selectedId && <Check size={11} style={{ color: 'var(--accent)' }} />}
+              </div>
             </div>
           ))}
         </div>
@@ -51,7 +74,7 @@ function LocationSelect({ locations }: { locations: CaptureLocation[] }) {
 }
 
 export function LeftPanel() {
-  const { hours, selectedHour, setHour, locations, importQueue } = useApp();
+  const { hours, selectedHour, setHour, locations, importQueue, selectedLocationId, setLocationId } = useApp();
   const maxCount = Math.max(...hours.map(h => h.photoCount), 1);
   const totalSessions = hours.reduce((s, h) => s + h.count, 0);
   const totalPhotos = hours.reduce((s, h) => s + h.photoCount, 0);
@@ -62,7 +85,7 @@ export function LeftPanel() {
     <div className="panel left">
       <div className="panel-section">
         <div className="uppercase" style={{ marginBottom: 6 }}>Capture Location</div>
-        <LocationSelect locations={locations} />
+        <LocationSelect locations={locations} selectedId={selectedLocationId} onSelect={setLocationId} />
       </div>
 
       <div className="panel-section">

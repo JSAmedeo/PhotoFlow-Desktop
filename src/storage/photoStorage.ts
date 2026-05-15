@@ -5,6 +5,7 @@ export interface SavePhotoContext {
   photoId: string;
   originalFilename: string;
   sourceType?: 'manual-picker' | 'watched-folder';
+  streamName?: string;
   captureLocationSlug?: string;
   importedAt?: string;
 }

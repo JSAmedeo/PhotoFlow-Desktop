@@ -2,6 +2,9 @@ import { initializeDatabase, getDatabase } from '../db/database';
 import type {
   CaptureLocation,
   HourBucket,
+  ImageStream,
+  FileNamingField,
+  AutoPrintItem,
   ImportedFileMetadata,
   ImportQueueItem,
   Photo,
@@ -30,6 +33,16 @@ const DEFAULT_WATCHED_FOLDER_SETTINGS: WatchedFolderSettings = {
   defaultCaptureLocationId: 'loc-2',
   defaultSessionAssignmentMode: 'active-session',
 };
+
+const LEGACY_DEFAULT_STREAM_IDS = [
+  'stream-giraffes',
+  'stream-main-gate',
+  'stream-pandas',
+  'stream-statue',
+  'stream-lion-cubs',
+  'stream-sea-lions',
+  'stream-carousel',
+];
 
 function isPhoto(value: Photo | undefined): value is Photo {
   return value !== undefined;
@@ -87,6 +100,8 @@ type PhotoRow = {
   source_path?: string | null;
   managed_original_path?: string | null;
   imported_at?: string | null;
+  image_stream_id?: string | null;
+  image_stream_name?: string | null;
   imported_file_json?: string | null;
 };
 
@@ -95,6 +110,36 @@ type LocationRow = {
   name: string;
   code: string;
   is_active: number;
+};
+
+type ImageStreamRow = {
+  id: string;
+  name: string;
+  slug: string;
+  code?: string | null;
+  type: ImageStream['type'];
+  enabled: number;
+  watch_path?: string | null;
+  status: ImageStream['status'];
+  last_activity_at?: string | null;
+  last_detected_filename?: string | null;
+  last_imported_filename?: string | null;
+  total_detected: number;
+  total_imported: number;
+  total_skipped: number;
+  total_failed: number;
+  files_per_minute?: number | null;
+  processing_preset?: string | null;
+  printer_name?: string | null;
+  auto_print_enabled?: number | null;
+  auto_print_items_json?: string | null;
+  file_renaming_enabled?: number | null;
+  file_naming_fields_json?: string | null;
+  file_naming_separator?: ImageStream['fileNamingSeparator'] | null;
+  file_naming_extension?: ImageStream['fileNamingExtension'] | null;
+  capture_location_id?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type HourRow = {
@@ -124,6 +169,9 @@ type ImportQueueRow = {
   photo_id?: string | null;
   detected_at?: string | null;
   imported_at?: string | null;
+  image_stream_id?: string | null;
+  image_stream_name?: string | null;
+  stream_type?: ImportQueueItem['streamType'] | null;
   error?: string | null;
   created_at: string;
   completed_at?: string | null;
@@ -193,6 +241,8 @@ function rowToPhoto(row: PhotoRow): Photo {
     sourceType: row.source_type ?? undefined,
     sourcePath: row.source_path ?? undefined,
     managedOriginalPath: row.managed_original_path ?? undefined,
+    imageStreamId: row.image_stream_id ?? undefined,
+    imageStreamName: row.image_stream_name ?? undefined,
     importedAt: row.imported_at ?? undefined,
     originalFilename: row.original_filename ?? undefined,
     sourceFilename: row.source_filename ?? undefined,
@@ -214,6 +264,47 @@ function rowToLocation(row: LocationRow): CaptureLocation {
     code: row.code,
     isActive: row.is_active === 1,
   };
+}
+
+function rowToImageStream(row: ImageStreamRow): ImageStream {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    code: row.code ?? undefined,
+    type: row.type,
+    enabled: row.enabled === 1,
+    watchPath: row.watch_path ?? null,
+    status: row.status,
+    lastActivityAt: row.last_activity_at ?? null,
+    lastDetectedFilename: row.last_detected_filename ?? null,
+    lastImportedFilename: row.last_imported_filename ?? null,
+    totalDetected: row.total_detected,
+    totalImported: row.total_imported,
+    totalSkipped: row.total_skipped,
+    totalFailed: row.total_failed,
+    filesPerMinute: row.files_per_minute ?? undefined,
+    processingPreset: row.processing_preset ?? null,
+    printerName: row.printer_name ?? null,
+    autoPrintEnabled: row.auto_print_enabled === 1,
+    autoPrintItems: parseJson<AutoPrintItem[]>(row.auto_print_items_json, []),
+    fileRenamingEnabled: row.file_renaming_enabled === 1,
+    fileNamingFields: parseJson<FileNamingField[]>(row.file_naming_fields_json, []),
+    fileNamingSeparator: row.file_naming_separator ?? '_',
+    fileNamingExtension: row.file_naming_extension ?? 'JPG',
+    captureLocationId: row.capture_location_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function streamsToLocations(streams: ImageStream[]): CaptureLocation[] {
+  return streams.map(stream => ({
+    id: stream.captureLocationId ?? stream.id,
+    name: stream.name,
+    code: stream.code ?? stream.slug.toUpperCase(),
+    isActive: stream.enabled || stream.status !== 'disabled',
+  }));
 }
 
 function rowToHour(row: HourRow): HourBucket {
@@ -239,6 +330,9 @@ function rowToImportQueueItem(row: ImportQueueRow): ImportQueueItem {
     sourceType: row.source_type ?? undefined,
     sourcePath: row.source_path ?? undefined,
     sourceFilename: row.source_filename ?? undefined,
+    imageStreamId: row.image_stream_id ?? undefined,
+    imageStreamName: row.image_stream_name ?? undefined,
+    streamType: row.stream_type ?? undefined,
     parsedSessionKey: row.parsed_session_key ?? undefined,
     parsedSequenceNumber: row.parsed_sequence_number ?? undefined,
     routingStatus: row.routing_status ?? undefined,
@@ -300,8 +394,8 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       operator_notes, enhance_version, width, height, file_size_mb, file_format, original_path,
       storage_kind, storage_path, original_filename, source_filename, session_key, sequence_number,
       sequence_label, routing_status, routing_reason, size_bytes, last_modified, source_type,
-      source_path, managed_original_path, imported_at, imported_file_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+      source_path, managed_original_path, image_stream_id, image_stream_name, imported_at, imported_file_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
     ON CONFLICT(id) DO UPDATE SET
       session_id = excluded.session_id,
       filename = excluded.filename,
@@ -336,6 +430,8 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       source_type = excluded.source_type,
       source_path = excluded.source_path,
       managed_original_path = excluded.managed_original_path,
+      image_stream_id = excluded.image_stream_id,
+      image_stream_name = excluded.image_stream_name,
       imported_at = excluded.imported_at,
       imported_file_json = excluded.imported_file_json`,
     [
@@ -373,8 +469,78 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       photo.sourceType ?? null,
       photo.sourcePath ?? null,
       photo.managedOriginalPath ?? null,
+      photo.imageStreamId ?? null,
+      photo.imageStreamName ?? null,
       photo.importedAt ?? null,
       photo.importedFile ? JSON.stringify(photo.importedFile) : null,
+    ],
+  );
+}
+
+async function upsertImageStream(stream: ImageStream): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `INSERT INTO image_streams (
+      id, name, slug, code, type, enabled, watch_path, status, last_activity_at,
+      last_detected_filename, last_imported_filename, total_detected, total_imported,
+      total_skipped, total_failed, files_per_minute, processing_preset, printer_name,
+      auto_print_enabled, auto_print_items_json, file_renaming_enabled, file_naming_fields_json,
+      file_naming_separator, file_naming_extension, capture_location_id, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      slug = excluded.slug,
+      code = excluded.code,
+      type = excluded.type,
+      enabled = excluded.enabled,
+      watch_path = excluded.watch_path,
+      status = excluded.status,
+      last_activity_at = excluded.last_activity_at,
+      last_detected_filename = excluded.last_detected_filename,
+      last_imported_filename = excluded.last_imported_filename,
+      total_detected = excluded.total_detected,
+      total_imported = excluded.total_imported,
+      total_skipped = excluded.total_skipped,
+      total_failed = excluded.total_failed,
+      files_per_minute = excluded.files_per_minute,
+      processing_preset = excluded.processing_preset,
+      printer_name = excluded.printer_name,
+      auto_print_enabled = excluded.auto_print_enabled,
+      auto_print_items_json = excluded.auto_print_items_json,
+      file_renaming_enabled = excluded.file_renaming_enabled,
+      file_naming_fields_json = excluded.file_naming_fields_json,
+      file_naming_separator = excluded.file_naming_separator,
+      file_naming_extension = excluded.file_naming_extension,
+      capture_location_id = excluded.capture_location_id,
+      updated_at = excluded.updated_at`,
+    [
+      stream.id,
+      stream.name,
+      stream.slug,
+      stream.code ?? null,
+      stream.type,
+      boolToInt(stream.enabled),
+      stream.watchPath ?? null,
+      stream.status,
+      stream.lastActivityAt ?? null,
+      stream.lastDetectedFilename ?? null,
+      stream.lastImportedFilename ?? null,
+      stream.totalDetected,
+      stream.totalImported,
+      stream.totalSkipped,
+      stream.totalFailed,
+      stream.filesPerMinute ?? null,
+      stream.processingPreset ?? null,
+      stream.printerName ?? null,
+      boolToInt(stream.autoPrintEnabled ?? false),
+      JSON.stringify(stream.autoPrintItems ?? []),
+      boolToInt(stream.fileRenamingEnabled ?? false),
+      JSON.stringify(stream.fileNamingFields ?? []),
+      stream.fileNamingSeparator ?? '_',
+      stream.fileNamingExtension ?? 'JPG',
+      stream.captureLocationId ?? null,
+      stream.createdAt,
+      stream.updatedAt,
     ],
   );
 }
@@ -430,6 +596,7 @@ async function seedDatabase(): Promise<void> {
   await db.execute('DELETE FROM photos');
   await db.execute('DELETE FROM sessions');
   await db.execute('DELETE FROM capture_locations');
+  await db.execute('DELETE FROM image_streams');
   await db.execute('DELETE FROM hour_buckets');
   await db.execute('DELETE FROM app_state');
 
@@ -447,6 +614,27 @@ async function seedIfEmpty(): Promise<void> {
   const db = await getDatabase();
   const rows = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM sessions');
   if ((rows[0]?.count ?? 0) === 0) await seedDatabase();
+  for (const streamId of LEGACY_DEFAULT_STREAM_IDS) {
+    await db.execute(
+      `DELETE FROM image_streams
+      WHERE id = $1
+        AND watch_path IS NULL
+        AND total_detected = 0
+        AND total_imported = 0
+        AND total_skipped = 0
+        AND total_failed = 0`,
+      [streamId],
+    );
+  }
+  await db.execute(
+    `DELETE FROM image_streams
+    WHERE name LIKE 'New Stream%'
+      AND watch_path IS NULL
+      AND total_detected = 0
+      AND total_imported = 0
+      AND total_skipped = 0
+      AND total_failed = 0`,
+  );
 }
 
 export const sqliteMetadataStore: MetadataStore = {
@@ -573,10 +761,11 @@ export const sqliteMetadataStore: MetadataStore = {
     await db.execute(
       `INSERT INTO import_queue (
         id, filename, session_id, status, progress, file_size, last_modified,
-        source_type, source_path, source_filename, parsed_session_key, parsed_sequence_number,
+        source_type, source_path, source_filename, image_stream_id, image_stream_name, stream_type,
+        parsed_session_key, parsed_sequence_number,
         routing_status, routing_reason, destination_path, photo_id, detected_at, imported_at,
         error, created_at, completed_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       ON CONFLICT(id) DO UPDATE SET
         filename = excluded.filename,
         session_id = excluded.session_id,
@@ -587,6 +776,9 @@ export const sqliteMetadataStore: MetadataStore = {
         source_type = excluded.source_type,
         source_path = excluded.source_path,
         source_filename = excluded.source_filename,
+        image_stream_id = excluded.image_stream_id,
+        image_stream_name = excluded.image_stream_name,
+        stream_type = excluded.stream_type,
         parsed_session_key = excluded.parsed_session_key,
         parsed_sequence_number = excluded.parsed_sequence_number,
         routing_status = excluded.routing_status,
@@ -609,6 +801,9 @@ export const sqliteMetadataStore: MetadataStore = {
         item.sourceType ?? null,
         item.sourcePath ?? null,
         item.sourceFilename ?? null,
+        item.imageStreamId ?? null,
+        item.imageStreamName ?? null,
+        item.streamType ?? null,
         item.parsedSessionKey ?? null,
         item.parsedSequenceNumber ?? null,
         item.routingStatus ?? null,
@@ -631,6 +826,11 @@ export const sqliteMetadataStore: MetadataStore = {
     await this.addImportQueueItem({ ...item, ...changes });
   },
 
+  async removeImportQueueItem(id: string) {
+    const db = await getDatabase();
+    await db.execute('DELETE FROM import_queue WHERE id = $1', [id]);
+  },
+
   async clearCompletedImports() {
     const db = await getDatabase();
     await db.execute("DELETE FROM import_queue WHERE status NOT IN ('queued', 'stabilizing', 'importing')");
@@ -642,9 +842,44 @@ export const sqliteMetadataStore: MetadataStore = {
   },
 
   async getLocations() {
+    const streams = await this.getImageStreams();
+    if (streams.length > 0) return streamsToLocations(streams);
+
     const db = await getDatabase();
     const rows = await db.select<LocationRow[]>('SELECT * FROM capture_locations ORDER BY id');
     return rows.map(rowToLocation);
+  },
+
+  async getImageStreams() {
+    const db = await getDatabase();
+    const rows = await db.select<ImageStreamRow[]>('SELECT * FROM image_streams ORDER BY name');
+    return rows.map(rowToImageStream);
+  },
+
+  async getImageStreamById(id) {
+    const db = await getDatabase();
+    const rows = await db.select<ImageStreamRow[]>('SELECT * FROM image_streams WHERE id = $1', [id]);
+    return rows[0] ? rowToImageStream(rows[0]) : undefined;
+  },
+
+  async addImageStream(stream) {
+    const existing = await this.getImageStreamById(stream.id);
+    if (existing) return existing;
+    await upsertImageStream(stream);
+    return stream;
+  },
+
+  async updateImageStream(id, changes) {
+    const stream = await this.getImageStreamById(id);
+    if (!stream) return undefined;
+    const updated: ImageStream = { ...stream, ...changes, updatedAt: new Date().toISOString() };
+    await upsertImageStream(updated);
+    return updated;
+  },
+
+  async deleteImageStream(id) {
+    const db = await getDatabase();
+    await db.execute('DELETE FROM image_streams WHERE id = $1', [id]);
   },
 
   async getHours() {

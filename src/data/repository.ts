@@ -3,7 +3,13 @@
 
 import type {
   CaptureLocation,
+  AutoPrintItem,
+  FileNamingField,
+  FileNamingExtension,
+  FileNamingSeparator,
   HourBucket,
+  ImageStream,
+  ImageStreamStatus,
   ImportedFileMetadata,
   ImportQueueItem,
   Photo,
@@ -121,8 +127,114 @@ export async function setWatchedFolderSettings(settings: WatchedFolderSettings):
   await (await getMetadataStore()).setWatchedFolderSettings(settings);
 }
 
+export async function getImageStreams(): Promise<ImageStream[]> {
+  return (await getMetadataStore()).getImageStreams();
+}
+
+export async function getImageStreamById(id: string): Promise<ImageStream | undefined> {
+  return (await getMetadataStore()).getImageStreamById(id);
+}
+
+function makeSlug(value: string): string {
+  return slugify(value).replace(/^-+|-+$/g, '') || `stream-${Date.now()}`;
+}
+
+function streamStatusFor(stream: ImageStream): ImageStreamStatus {
+  if (!stream.enabled) return 'disabled';
+  if (!stream.watchPath) return 'idle';
+  return stream.status === 'error' ? 'error' : 'watching';
+}
+
+export async function createImageStream(input: {
+  name: string;
+  code?: string;
+  type?: ImageStream['type'];
+  watchPath?: string | null;
+  enabled?: boolean;
+  processingPreset?: string | null;
+  printerName?: string | null;
+  autoPrintEnabled?: boolean;
+  autoPrintItems?: AutoPrintItem[];
+  fileRenamingEnabled?: boolean;
+  fileNamingFields?: FileNamingField[];
+  fileNamingSeparator?: FileNamingSeparator;
+  fileNamingExtension?: FileNamingExtension;
+}): Promise<ImageStream> {
+  const now = new Date().toISOString();
+  const slug = makeSlug(input.name);
+  const enabled = input.enabled ?? false;
+  const stream: ImageStream = {
+    id: `stream-${slug}-${Date.now().toString(36)}`,
+    name: input.name.trim() || 'New Stream',
+    slug,
+    code: input.code?.trim() || undefined,
+    type: input.type ?? 'local-folder',
+    enabled,
+    watchPath: input.watchPath ?? null,
+    status: enabled ? (input.watchPath ? 'watching' : 'idle') : 'disabled',
+    totalDetected: 0,
+    totalImported: 0,
+    totalSkipped: 0,
+    totalFailed: 0,
+    filesPerMinute: 0,
+    processingPreset: input.processingPreset ?? 'Default - Background removal + Enhance',
+    printerName: input.printerName ?? null,
+    autoPrintEnabled: input.autoPrintEnabled ?? false,
+    autoPrintItems: input.autoPrintItems ?? [],
+    fileRenamingEnabled: input.fileRenamingEnabled ?? false,
+    fileNamingFields: input.fileNamingFields ?? [],
+    fileNamingSeparator: input.fileNamingSeparator ?? '_',
+    fileNamingExtension: input.fileNamingExtension ?? 'JPG',
+    captureLocationId: `stream-${slug}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return (await getMetadataStore()).addImageStream(stream);
+}
+
+export async function updateImageStream(id: string, changes: Partial<ImageStream>): Promise<ImageStream | undefined> {
+  const store = await getMetadataStore();
+  const current = await store.getImageStreamById(id);
+  if (!current) return undefined;
+  const next = { ...current, ...changes };
+  next.status = changes.status ?? streamStatusFor(next);
+  return store.updateImageStream(id, next);
+}
+
+export async function deleteImageStream(id: string): Promise<void> {
+  await (await getMetadataStore()).deleteImageStream(id);
+}
+
+export async function recordImageStreamActivity(
+  streamId: string | undefined,
+  event: 'detected' | 'imported' | 'skipped' | 'failed',
+  filename: string,
+): Promise<void> {
+  if (!streamId) return;
+  const store = await getMetadataStore();
+  const stream = await store.getImageStreamById(streamId);
+  if (!stream) return;
+
+  const now = new Date().toISOString();
+  await store.updateImageStream(streamId, {
+    status: event === 'failed' ? 'error' : event === 'skipped' ? 'review' : stream.enabled && stream.watchPath ? 'watching' : 'idle',
+    lastActivityAt: now,
+    lastDetectedFilename: event === 'detected' ? filename : stream.lastDetectedFilename,
+    lastImportedFilename: event === 'imported' ? filename : stream.lastImportedFilename,
+    totalDetected: stream.totalDetected + (event === 'detected' ? 1 : 0),
+    totalImported: stream.totalImported + (event === 'imported' ? 1 : 0),
+    totalSkipped: stream.totalSkipped + (event === 'skipped' ? 1 : 0),
+    totalFailed: stream.totalFailed + (event === 'failed' ? 1 : 0),
+    filesPerMinute: event === 'detected' ? Math.max(1, stream.filesPerMinute ?? 0) : stream.filesPerMinute,
+  });
+}
+
 export async function clearCompletedImports(): Promise<void> {
   await (await getMetadataStore()).clearCompletedImports();
+}
+
+export async function removeImportQueueItem(id: string): Promise<void> {
+  await (await getMetadataStore()).removeImportQueueItem(id);
 }
 
 export async function clearImportQueue(): Promise<void> {
@@ -160,6 +272,62 @@ async function isDuplicateImport(
   });
 }
 
+function filenameStem(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  return dot > 0 ? filename.slice(0, dot) : filename;
+}
+
+function sanitizeFilenamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_\-.]+|[_\-.]+$/g, '') || 'TEXT';
+}
+
+function todayStamp(): string {
+  const now = new Date();
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function buildStreamFilename(
+  originalFile: File,
+  routing: SessionRoutingResult,
+  imageStream?: Pick<ImageStream, 'name' | 'slug' | 'code' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension'>,
+): string {
+  if (!imageStream?.fileRenamingEnabled) return originalFile.name;
+
+  const fields = imageStream.fileNamingFields?.length
+    ? imageStream.fileNamingFields
+    : [
+      { id: 'default-custom', type: 'custom', customText: 'TEXT' },
+      { id: 'default-barcode', type: 'barcode' },
+      { id: 'default-sequence', type: 'seq-number' },
+    ] satisfies FileNamingField[];
+  const separator = imageStream.fileNamingSeparator ?? '_';
+  const extension = imageStream.fileNamingExtension ?? 'JPG';
+  const sequence = routing.sequenceLabel ?? (routing.sequenceNumber != null ? String(routing.sequenceNumber).padStart(2, '0') : '01');
+  const barcode = routing.sessionKey ?? routing.session?.sessionCode ?? 'UNROUTED';
+  const parts = fields.map(field => {
+    if (field.type === 'custom') return field.customText || 'TEXT';
+    if (field.type === 'barcode') return barcode;
+    if (field.type === 'seq-number') return sequence;
+    if (field.type === 'stream-name') return imageStream.name;
+    if (field.type === 'stream-code') return imageStream.code ?? imageStream.slug.toUpperCase();
+    if (field.type === 'original-filename') return filenameStem(originalFile.name);
+    if (field.type === 'date') return todayStamp();
+    return 'TEXT';
+  }).map(sanitizeFilenamePart).filter(Boolean);
+
+  return `${parts.join(separator) || filenameStem(originalFile.name)}.${extension}`;
+}
+
+function fileWithName(file: File, filename: string): File {
+  if (filename === file.name) return file;
+  return new File([file], filename, { type: file.type, lastModified: file.lastModified });
+}
+
 function makeImportedPhoto(
   session: Session,
   file: File,
@@ -169,7 +337,11 @@ function makeImportedPhoto(
   source: {
     sourceType: Photo['sourceType'];
     sourcePath?: string;
+    imageStreamId?: string | null;
+    imageStreamName?: string | null;
+    captureLocationId?: string | null;
     importedAt: string;
+    sourceFilename?: string;
   },
   routing: SessionRoutingResult,
 ): Photo {
@@ -190,7 +362,7 @@ function makeImportedPhoto(
     beforeImageUrl: savedPhoto.displayUrl,
     afterImageUrl: savedPhoto.displayUrl,
     createdAt: source.importedAt,
-    captureLocationId: session.captureLocationId,
+    captureLocationId: source.captureLocationId ?? session.captureLocationId,
     processingStatus: 'pending',
     flag: 'none',
     isFavorite: false,
@@ -207,9 +379,11 @@ function makeImportedPhoto(
     sourceType: source.sourceType,
     sourcePath: source.sourcePath,
     managedOriginalPath: savedPhoto.managedOriginalPath ?? savedPhoto.relativePath,
+    imageStreamId: source.imageStreamId ?? null,
+    imageStreamName: source.imageStreamName ?? null,
     importedAt: source.importedAt,
     originalFilename: savedPhoto.originalFilename,
-    sourceFilename: file.name,
+    sourceFilename: source.sourceFilename ?? file.name,
     sessionKey: routing.sessionKey ?? session.sessionCode,
     sequenceNumber: routing.sequenceNumber ?? null,
     sequenceLabel: routing.sequenceLabel ?? null,
@@ -365,6 +539,7 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
         sourceType: 'manual-picker',
         captureLocationSlug: slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
         importedAt,
+        // streamName intentionally omitted for manual imports — uses captureLocationSlug as folder
       });
       await updateImportQueueItem(queueItem.id, { progress: 65 });
       const dimensions = await readImageDimensions(savedPhoto.displayUrl);
@@ -404,11 +579,16 @@ export async function importWatchedPhotoToSession(
   file: File,
   sourcePath: string,
   queueItemId?: string,
+  imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension'>,
 ): Promise<Photo | undefined> {
-  const fallbackSession = await getSessionById(sessionId);
-  if (!fallbackSession) throw new Error('No active session selected.');
   const parsed = parsePhotoFilename(file.name);
-  const routing = await routePhotoToSession({ parsed, fallbackSessionId: sessionId });
+  const streamCaptureLocation: CaptureLocation | undefined = imageStream ? {
+    id: imageStream.captureLocationId ?? imageStream.id,
+    name: imageStream.name,
+    code: imageStream.code ?? imageStream.slug.toUpperCase(),
+    isActive: true,
+  } : undefined;
+  const routing = await routePhotoToSession({ parsed, fallbackSessionId: sessionId, captureLocation: streamCaptureLocation });
   const targetSessionId = routing.sessionId ?? sessionId;
 
   const queueItem: ImportQueueItem = {
@@ -422,6 +602,9 @@ export async function importWatchedPhotoToSession(
     sourceType: 'watched-folder',
     sourcePath,
     sourceFilename: file.name,
+    imageStreamId: imageStream?.id ?? null,
+    imageStreamName: imageStream?.name ?? null,
+    streamType: imageStream?.type,
     parsedSessionKey: parsed.sessionKey ?? undefined,
     parsedSequenceNumber: parsed.sequenceNumber,
     routingStatus: routing.status === 'routed' ? 'routed' : 'unrouted',
@@ -460,21 +643,28 @@ export async function importWatchedPhotoToSession(
     await updateImportQueueItem(queueItem.id, { status: 'importing', progress: 35 });
     const photoId = `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const importedAt = new Date().toISOString();
-    const savedPhoto = await getPhotoStorageService().saveImportedPhoto(file, {
+    const importFilename = buildStreamFilename(file, routing, imageStream);
+    const importFile = fileWithName(file, importFilename);
+    const savedPhoto = await getPhotoStorageService().saveImportedPhoto(importFile, {
       sessionKey: routing.session.sessionCode || routing.session.id,
       photoId,
-      originalFilename: file.name,
+      originalFilename: importFile.name,
       sourceType: 'watched-folder',
-      captureLocationSlug: slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
+      streamName: imageStream?.name,
+      captureLocationSlug: imageStream?.slug ?? slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
       importedAt,
     });
     await updateImportQueueItem(queueItem.id, { progress: 65 });
     const dimensions = await readImageDimensions(savedPhoto.displayUrl);
     await updateImportQueueItem(queueItem.id, { progress: 80 });
-    const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, file, photoId, savedPhoto, dimensions, {
+    const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, importFile, photoId, savedPhoto, dimensions, {
       sourceType: 'watched-folder',
       sourcePath,
+      imageStreamId: imageStream?.id ?? null,
+      imageStreamName: imageStream?.name ?? null,
+      captureLocationId: imageStream?.captureLocationId ?? imageStream?.id ?? routing.session.captureLocationId,
       importedAt,
+      sourceFilename: file.name,
     }, routing));
     await updateImportQueueItem(queueItem.id, {
       status: 'complete',
@@ -503,7 +693,17 @@ export async function importWatchedPhotoToSession(
 // ----- Locations & Hours -----------------------------------------------------
 
 export async function getLocations(): Promise<CaptureLocation[]> {
-  return (await getMetadataStore()).getLocations();
+  const store = await getMetadataStore();
+  const streams = await store.getImageStreams();
+  if (streams.length > 0) {
+    return streams.map(s => ({
+      id: s.captureLocationId ?? `stream-${s.slug}`,
+      name: s.name,
+      code: s.code ?? s.slug.toUpperCase().slice(0, 4),
+      isActive: s.enabled,
+    }));
+  }
+  return store.getLocations();
 }
 
 export async function getHours(): Promise<HourBucket[]> {

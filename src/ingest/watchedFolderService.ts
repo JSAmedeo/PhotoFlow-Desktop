@@ -2,9 +2,10 @@ import { join } from '@tauri-apps/api/path';
 import { readDir, watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { isTauriRuntime } from '../runtime/runtime';
 import { autoImportWatchedFile, isSupportedWatchedImage } from './autoImportPipeline';
-import type { StartWatcherOptions, WatchedFileCandidate } from './watchedFolderTypes';
+import type { StartImageStreamWatchersOptions, StartWatcherOptions, WatchedFileCandidate } from './watchedFolderTypes';
 
 let unwatchCurrent: UnwatchFn | null = null;
+const streamUnwatchers = new Map<string, UnwatchFn>();
 const inFlight = new Set<string>();
 const recentlyHandled = new Set<string>();
 
@@ -32,18 +33,32 @@ async function stopCurrentWatcher(): Promise<void> {
   }
 }
 
+async function stopStreamWatchers(): Promise<void> {
+  for (const unwatch of streamUnwatchers.values()) {
+    try {
+      unwatch();
+    } catch {
+      // Keep stopping the rest of the active watchers.
+    }
+  }
+  streamUnwatchers.clear();
+  inFlight.clear();
+}
+
 async function processCandidate(candidate: WatchedFileCandidate, options: StartWatcherOptions): Promise<void> {
   if (inFlight.has(candidate.path)) return;
   if (recentlyHandled.has(candidate.path)) return;
 
   inFlight.add(candidate.path);
   options.onStatus({ status: 'importing', lastDetected: candidate.filename });
+  if (options.imageStream) options.onStreamStatus?.(options.imageStream.id, { status: 'importing', lastDetected: candidate.filename });
 
   try {
     const result = await autoImportWatchedFile(
       candidate,
       options.sessionId,
       options.settings.fileSettleDelayMs,
+      options.imageStream,
     );
     recentlyHandled.add(candidate.path);
     window.setTimeout(() => recentlyHandled.delete(candidate.path), 10_000);
@@ -52,6 +67,13 @@ async function processCandidate(candidate: WatchedFileCandidate, options: StartW
       lastDetected: candidate.filename,
       lastImport: `${candidate.filename}: ${result}`,
     });
+    if (options.imageStream) {
+      options.onStreamStatus?.(options.imageStream.id, {
+        status: result === 'failed' ? 'error' : 'watching',
+        lastDetected: candidate.filename,
+        lastImport: `${candidate.filename}: ${result}`,
+      });
+    }
     await options.onImported();
   } catch (error) {
     console.error('[PhotoFlow] Watched-folder import failed.', error);
@@ -60,6 +82,13 @@ async function processCandidate(candidate: WatchedFileCandidate, options: StartW
       lastDetected: candidate.filename,
       error: describeError(error, 'Watched-folder import failed.'),
     });
+    if (options.imageStream) {
+      options.onStreamStatus?.(options.imageStream.id, {
+        status: 'error',
+        lastDetected: candidate.filename,
+        error: describeError(error, 'Watched-folder import failed.'),
+      });
+    }
   } finally {
     inFlight.delete(candidate.path);
   }
@@ -88,6 +117,7 @@ async function scanExistingFiles(folderPath: string, options: StartWatcherOption
 
 export async function startWatchedFolder(options: StartWatcherOptions): Promise<void> {
   await stopCurrentWatcher();
+  await stopStreamWatchers();
 
   if (!isTauriRuntime()) {
     options.onStatus({ status: 'desktop-only' });
@@ -133,4 +163,75 @@ export async function startWatchedFolder(options: StartWatcherOptions): Promise<
 
 export async function stopWatchedFolder(): Promise<void> {
   await stopCurrentWatcher();
+  await stopStreamWatchers();
+}
+
+export async function startImageStreamWatchers(options: StartImageStreamWatchersOptions): Promise<void> {
+  await stopCurrentWatcher();
+  await stopStreamWatchers();
+
+  if (!isTauriRuntime()) {
+    options.onStatus({ status: 'desktop-only' });
+    return;
+  }
+
+  const activeStreams = options.streams.filter(stream => stream.type === 'local-folder' && stream.enabled);
+  if (activeStreams.length === 0) {
+    options.onStatus({ status: 'off' });
+    return;
+  }
+
+  let started = 0;
+  for (const stream of activeStreams) {
+    if (!stream.watchPath) {
+      options.onStreamStatus(stream.id, { status: 'error', error: 'Choose a watched folder before enabling this stream.' });
+      continue;
+    }
+
+    const streamOptions: StartWatcherOptions = {
+      settings: {
+        watchEnabled: stream.enabled,
+        watchedImportFolder: stream.watchPath,
+        fileSettleDelayMs: options.settleDelayMs,
+        defaultCaptureLocationId: stream.captureLocationId ?? stream.id,
+        defaultSessionAssignmentMode: 'active-session',
+      },
+      imageStream: stream,
+      sessionId: options.sessionId,
+      onStatus: options.onStatus,
+      onStreamStatus: options.onStreamStatus,
+      onImported: options.onImported,
+    };
+
+    try {
+      const unwatch = await watch(
+        stream.watchPath,
+        event => {
+          for (const path of event.paths) {
+            const filename = filenameFromPath(path);
+            if (!isSupportedWatchedImage(filename)) continue;
+            void processCandidate({
+              path,
+              filename,
+              imageStreamId: stream.id,
+              detectedAt: new Date().toISOString(),
+            }, streamOptions);
+          }
+        },
+        { delayMs: Math.max(250, options.settleDelayMs), recursive: false },
+      );
+      streamUnwatchers.set(stream.id, unwatch);
+      options.onStreamStatus(stream.id, { status: 'watching' });
+      started += 1;
+      void scanExistingFiles(stream.watchPath, streamOptions);
+    } catch (error) {
+      console.error('[PhotoFlow] Could not start image stream watcher.', error);
+      options.onStreamStatus(stream.id, {
+        status: 'error',
+        error: describeError(error, 'Could not start image stream watcher.'),
+      });
+    }
+  }
+
+  options.onStatus({ status: started > 0 ? 'watching' : 'error' });
 }

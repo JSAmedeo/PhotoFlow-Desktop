@@ -60,6 +60,36 @@ CREATE TABLE IF NOT EXISTS capture_locations (
   is_active INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS image_streams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  code TEXT,
+  type TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  watch_path TEXT,
+  status TEXT NOT NULL,
+  last_activity_at TEXT,
+  last_detected_filename TEXT,
+  last_imported_filename TEXT,
+  total_detected INTEGER NOT NULL,
+  total_imported INTEGER NOT NULL,
+  total_skipped INTEGER NOT NULL,
+  total_failed INTEGER NOT NULL,
+  files_per_minute REAL,
+  processing_preset TEXT,
+  printer_name TEXT,
+  auto_print_enabled INTEGER,
+  auto_print_items_json TEXT,
+  file_renaming_enabled INTEGER,
+  file_naming_fields_json TEXT,
+  file_naming_separator TEXT,
+  file_naming_extension TEXT,
+  capture_location_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS hour_buckets (
   h TEXT PRIMARY KEY,
   label TEXT NOT NULL,
@@ -91,5 +121,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_session_code ON sessions(session_
 CREATE INDEX IF NOT EXISTS idx_photos_session_id ON photos(session_id);
 CREATE INDEX IF NOT EXISTS idx_photos_created_at ON photos(created_at);
 CREATE INDEX IF NOT EXISTS idx_photos_storage_kind ON photos(storage_kind);
+CREATE INDEX IF NOT EXISTS idx_image_streams_slug ON image_streams(slug);
+CREATE INDEX IF NOT EXISTS idx_image_streams_enabled ON image_streams(enabled);
 CREATE INDEX IF NOT EXISTS idx_import_queue_session_id ON import_queue(session_id);
 `;

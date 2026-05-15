@@ -1,6 +1,7 @@
 import type {
   CaptureLocation,
   HourBucket,
+  ImageStream,
   ImportQueueItem,
   Photo,
   Session,
@@ -31,9 +32,15 @@ export interface MetadataStore {
   getImportQueue(): Promise<ImportQueueItem[]>;
   addImportQueueItem(item: ImportQueueItem): Promise<void>;
   updateImportQueueItem(itemId: string, changes: Partial<ImportQueueItem>): Promise<void>;
+  removeImportQueueItem(id: string): Promise<void>;
   clearCompletedImports(): Promise<void>;
   clearImportQueue(): Promise<void>;
   getLocations(): Promise<CaptureLocation[]>;
+  getImageStreams(): Promise<ImageStream[]>;
+  getImageStreamById(id: string): Promise<ImageStream | undefined>;
+  addImageStream(stream: ImageStream): Promise<ImageStream>;
+  updateImageStream(id: string, changes: Partial<ImageStream>): Promise<ImageStream | undefined>;
+  deleteImageStream(id: string): Promise<void>;
   getHours(): Promise<HourBucket[]>;
   getSelectedSessionId(): Promise<string>;
   setSelectedSessionId(id: string): Promise<void>;

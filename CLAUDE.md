@@ -54,9 +54,38 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 4 | Desktop Runtime Foundation | **COMPLETE** |
 | 5 | Local Database Foundation | **COMPLETE** |
 | 6 | Watched Folder Ingest | **COMPLETE** |
-| 7 | Filename-Based Session Routing | **CURRENT** |
+| 7 | Filename-Based Session Routing | **COMPLETE** |
+| 8 | Image Streams Foundation | **CURRENT** |
 
-## Phase 7 — Current Focus
+## Phase 8 — Current Focus
+
+**Goal:** Build the Image Streams page and data foundation for multiple inbound local-folder photo pathways while preserving browser mode, Tauri mode, manual import, watched-folder import, filename session routing, and managed storage under `C:\PhotoFlow Desktop`.
+
+Phase 8 concepts:
+- Image Stream = inbound source / capture location pathway
+- Session = customer/barcode grouping parsed from filename
+- Processing Queue = future journey/status view across import and AI processing
+
+Current stream support:
+- local-folder streams are supported
+- API/cloud/mobile streams are future placeholders only
+- streams populate the existing capture location dropdown/list
+- photo-op File Renaming is configurable per stream; disabled keeps incoming filenames unchanged
+- photo-op Auto-print setup stores intended print items/routing metadata, but does not activate print workflow
+- stream context is separate from filename-based session routing
+- stream metadata belongs in the metadata store/repository layer, not UI components
+
+Hard rules for Phase 8:
+- Do not implement AI/rembg processing.
+- Do not activate full Processing Queue logic.
+- Do not implement API stream ingestion.
+- Do not build DSLR SDK, Canon SDK, tethering, face matching, print package routing, or archive movement.
+- Do not add cloud sync.
+- Do not redesign the UI.
+- Do not reintroduce old app-local imported path compatibility.
+- Preserve browser fallback mode.
+
+## Phase 7 — Previous Focus
 
 **Goal:** Route imported photos to sessions automatically from filename session IDs while preserving browser mode, manual import, Tauri managed file storage, watched-folder ingest, Gallery delete flows, and SQLite metadata.
 
@@ -209,7 +238,7 @@ Do not build these unless explicitly scoped into a phase:
 - Advanced analytics
 - AI processing pipeline
 - LocalStorage-to-SQLite migration
-- Folder watching
+- Additional stream types beyond local-folder watching
 
 ## Communication Style
 

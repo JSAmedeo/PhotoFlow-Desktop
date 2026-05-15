@@ -53,5 +53,6 @@ export const STORE_KEYS = {
   activeTab:         'activeTab',
   selectedHour:      'selectedHour',
   importQueue:       'importQueue',
+  imageStreams:      'imageStreams',
   watchedFolderSettings: 'watchedFolderSettings',
 } as const;

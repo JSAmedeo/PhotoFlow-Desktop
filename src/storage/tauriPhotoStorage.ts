@@ -21,14 +21,14 @@ function sanitizePathPart(value: string): string {
   return cleaned || 'photo';
 }
 
-function datePathParts(value: string): string[] {
+function datePathParts(value: string): { mmYyyy: string; dd: string; hh: string } {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return datePathParts(new Date().toISOString());
-  return [
-    String(date.getFullYear()),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ];
+  return {
+    mmYyyy: `${String(date.getMonth() + 1).padStart(2, '0')}_${date.getFullYear()}`,
+    dd: String(date.getDate()).padStart(2, '0'),
+    hh: String(date.getHours()).padStart(2, '0'),
+  };
 }
 
 function isAbsoluteWindowsPath(path: string): boolean {
@@ -45,22 +45,20 @@ function isSupportedManagedPath(path: string): boolean {
 
 export const tauriPhotoStorage: PhotoStorageService = {
   async saveImportedPhoto(file: File, context: SavePhotoContext): Promise<SavedPhotoReference> {
+    const streamFolder = sanitizePathPart(context.streamName ?? context.captureLocationSlug ?? 'manual-import');
     const safeSession = sanitizePathPart(context.sessionKey);
-    const safeFilename = sanitizePathPart(context.originalFilename);
-    const locationSlug = sanitizePathPart(context.captureLocationSlug ?? 'manual-import');
-    const [year, month, day] = datePathParts(context.importedAt ?? new Date().toISOString());
+    const safeFilename = sanitizePathPart(file.name);
+    const { mmYyyy, dd, hh } = datePathParts(context.importedAt ?? new Date().toISOString());
     const folder = await join(
       WINDOWS_SUPPORT_STORAGE_ROOT,
       'photos',
-      'imported',
-      year,
-      month,
-      day,
-      locationSlug,
+      streamFolder,
+      mmYyyy,
+      dd,
+      hh,
       safeSession,
-      'originals',
     );
-    const storagePath = await join(folder, `${sanitizePathPart(context.photoId)}_${safeFilename}`);
+    const storagePath = await join(folder, safeFilename);
     const bytes = new Uint8Array(await file.arrayBuffer());
 
     await mkdir(folder, { recursive: true });

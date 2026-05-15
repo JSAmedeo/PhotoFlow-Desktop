@@ -2,9 +2,10 @@ import { readFile, remove } from '@tauri-apps/plugin-fs';
 import {
   addImportQueueItem,
   importWatchedPhotoToSession,
+  recordImageStreamActivity,
   updateImportQueueItem,
 } from '../data/repository';
-import type { ImportQueueItem } from '../data/models';
+import type { ImageStream, ImportQueueItem } from '../data/models';
 import { SUPPORTED_WATCHED_EXTENSIONS, type WatchedFileCandidate } from './watchedFolderTypes';
 import { waitForStableFile } from './fileStability';
 
@@ -20,7 +21,7 @@ function mimeTypeFor(filename: string): string {
   return 'image/jpeg';
 }
 
-function makeQueueItem(candidate: WatchedFileCandidate, sessionId: string, status: ImportQueueItem['status']): ImportQueueItem {
+function makeQueueItem(candidate: WatchedFileCandidate, sessionId: string, status: ImportQueueItem['status'], imageStream?: ImageStream): ImportQueueItem {
   return {
     id: `iq-watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     filename: candidate.filename,
@@ -30,6 +31,9 @@ function makeQueueItem(candidate: WatchedFileCandidate, sessionId: string, statu
     sourceType: 'watched-folder',
     sourcePath: candidate.path,
     sourceFilename: candidate.filename,
+    imageStreamId: imageStream?.id ?? candidate.imageStreamId ?? null,
+    imageStreamName: imageStream?.name ?? null,
+    streamType: imageStream?.type,
     detectedAt: candidate.detectedAt,
     createdAt: new Date().toISOString(),
     completedAt: status === 'skipped' ? new Date().toISOString() : undefined,
@@ -44,17 +48,20 @@ export async function autoImportWatchedFile(
   candidate: WatchedFileCandidate,
   sessionId: string,
   settleDelayMs: number,
+  imageStream?: ImageStream,
 ): Promise<'complete' | 'skipped' | 'failed'> {
   if (!isSupportedWatchedImage(candidate.filename)) {
     await addImportQueueItem({
-      ...makeQueueItem(candidate, sessionId, 'skipped'),
+      ...makeQueueItem(candidate, sessionId, 'skipped', imageStream),
       error: 'Unsupported watched-folder file type.',
     });
+    await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
     return 'skipped';
   }
 
-  const queueItem = makeQueueItem(candidate, sessionId, 'queued');
+  const queueItem = makeQueueItem(candidate, sessionId, 'queued', imageStream);
   await addImportQueueItem(queueItem);
+  await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'detected', candidate.filename);
 
   try {
     await updateImportQueueItem(queueItem.id, {
@@ -76,8 +83,11 @@ export async function autoImportWatchedFile(
       type: mimeTypeFor(candidate.filename),
       lastModified: stable.lastModified,
     });
-    const imported = await importWatchedPhotoToSession(sessionId, file, candidate.path, queueItem.id);
-    if (!imported) return 'skipped';
+    const imported = await importWatchedPhotoToSession(sessionId, file, candidate.path, queueItem.id, imageStream);
+    if (!imported) {
+      await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
+      return 'skipped';
+    }
 
     try {
       await remove(candidate.path);
@@ -92,6 +102,7 @@ export async function autoImportWatchedFile(
           : 'Imported, but source cleanup failed.',
       });
     }
+    await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'imported', candidate.filename);
     return 'complete';
   } catch (error) {
     await updateImportQueueItem(queueItem.id, {
@@ -100,6 +111,7 @@ export async function autoImportWatchedFile(
       error: error instanceof Error ? error.message : 'Watched-folder import failed.',
       completedAt: new Date().toISOString(),
     });
+    await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'failed', candidate.filename);
     return 'failed';
   }
 }

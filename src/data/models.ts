@@ -11,12 +11,62 @@ export type PhotoStorageKind = 'demo-asset' | 'browser-data-url' | 'tauri-manage
 export type ImportSourceType = 'manual-picker' | 'watched-folder';
 export type RoutingStatus = 'routed' | 'unrouted' | 'routing_failed';
 export type WatcherStatus = 'desktop-only' | 'off' | 'watching' | 'importing' | 'error';
+export type ImageStreamType = 'local-folder' | 'api-placeholder';
+export type ImageStreamStatus = 'disabled' | 'idle' | 'watching' | 'receiving' | 'review' | 'error';
+export type FileNamingFieldType = 'custom' | 'barcode' | 'seq-number' | 'stream-name' | 'stream-code' | 'original-filename' | 'date';
+export type FileNamingSeparator = '-' | '.' | '_';
+export type FileNamingExtension = 'JPG' | 'DNG' | 'RAW';
+export type AutoPrintSize = '4x6' | '6x8' | 'wallets';
+
+export interface FileNamingField {
+  id: string;
+  type: FileNamingFieldType;
+  customText?: string;
+}
+
+export interface AutoPrintItem {
+  id: string;
+  quantity: number;
+  size: AutoPrintSize;
+  template: string;
+  templateSubline?: string;
+}
 
 export interface CaptureLocation {
   id: string;
   name: string;
   code: string;
   isActive: boolean;
+}
+
+export interface ImageStream {
+  id: string;
+  name: string;
+  slug: string;
+  code?: string;
+  type: ImageStreamType;
+  enabled: boolean;
+  watchPath?: string | null;
+  status: ImageStreamStatus;
+  lastActivityAt?: string | null;
+  lastDetectedFilename?: string | null;
+  lastImportedFilename?: string | null;
+  totalDetected: number;
+  totalImported: number;
+  totalSkipped: number;
+  totalFailed: number;
+  filesPerMinute?: number;
+  processingPreset?: string | null;
+  printerName?: string | null;
+  autoPrintEnabled?: boolean;
+  autoPrintItems?: AutoPrintItem[];
+  fileRenamingEnabled?: boolean;
+  fileNamingFields?: FileNamingField[];
+  fileNamingSeparator?: FileNamingSeparator;
+  fileNamingExtension?: FileNamingExtension;
+  captureLocationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Session {
@@ -61,6 +111,8 @@ export interface Photo {
   sourceType?: ImportSourceType;
   sourcePath?: string;
   managedOriginalPath?: string;
+  imageStreamId?: string | null;
+  imageStreamName?: string | null;
   importedAt?: string;
   originalFilename?: string;
   sourceFilename?: string;
@@ -92,6 +144,9 @@ export interface ImportQueueItem {
   sourceType?: ImportSourceType;
   sourcePath?: string;
   sourceFilename?: string;
+  imageStreamId?: string | null;
+  imageStreamName?: string | null;
+  streamType?: ImageStreamType;
   parsedSessionKey?: string;
   parsedSequenceNumber?: number | null;
   routingStatus?: RoutingStatus;

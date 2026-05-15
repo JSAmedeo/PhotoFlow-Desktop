@@ -1,4 +1,4 @@
-import type { Session } from '../data/models';
+import type { CaptureLocation, Session } from '../data/models';
 import { TINTS } from '../data/models';
 import { getMetadataStore } from '../data/stores/metadataStoreFactory';
 import type { ParsedPhotoFilename } from './filenameParser';
@@ -16,6 +16,7 @@ export interface SessionRoutingResult {
 export interface RoutePhotoInput {
   parsed: ParsedPhotoFilename;
   fallbackSessionId?: string;
+  captureLocation?: CaptureLocation;
 }
 
 function tintForSessionKey(sessionKey: string): [string, string] {
@@ -23,19 +24,19 @@ function tintForSessionKey(sessionKey: string): [string, string] {
   return TINTS[index];
 }
 
-async function makeSession(sessionKey: string, fallbackSessionId?: string): Promise<Session> {
+async function makeSession(sessionKey: string, fallbackSessionId?: string, captureLocation?: CaptureLocation): Promise<Session> {
   const store = await getMetadataStore();
   const fallback = fallbackSessionId ? await store.getSessionById(fallbackSessionId) : undefined;
   const locations = await store.getLocations();
-  const fallbackLocation = locations.find(location => location.isActive) ?? locations[0];
+  const fallbackLocation = captureLocation ?? locations.find(location => location.isActive) ?? locations[0];
   const now = new Date().toISOString();
 
   return {
     id: `session-${sessionKey}`,
     sessionCode: sessionKey,
     barcode: sessionKey,
-    captureLocationId: fallback?.captureLocationId ?? fallbackLocation?.id ?? 'unassigned',
-    captureLocationLabel: fallback?.captureLocationLabel ?? (
+    captureLocationId: captureLocation?.id ?? fallback?.captureLocationId ?? fallbackLocation?.id ?? 'unassigned',
+    captureLocationLabel: captureLocation ? `${captureLocation.name} · ${captureLocation.code}` : fallback?.captureLocationLabel ?? (
       fallbackLocation ? `${fallbackLocation.name} · ${fallbackLocation.code}` : 'Unassigned'
     ),
     handler: fallback?.handler ?? 'Auto route',
@@ -50,7 +51,7 @@ async function makeSession(sessionKey: string, fallbackSessionId?: string): Prom
 }
 
 export async function routePhotoToSession(input: RoutePhotoInput): Promise<SessionRoutingResult> {
-  const { parsed, fallbackSessionId } = input;
+  const { parsed, fallbackSessionId, captureLocation } = input;
 
   if (!parsed.sessionKey) {
     return {
@@ -63,7 +64,7 @@ export async function routePhotoToSession(input: RoutePhotoInput): Promise<Sessi
 
   const store = await getMetadataStore();
   const existing = await store.getSessionByCode(parsed.sessionKey);
-  const session = existing ?? await store.addSession(await makeSession(parsed.sessionKey, fallbackSessionId));
+  const session = existing ?? await store.addSession(await makeSession(parsed.sessionKey, fallbackSessionId, captureLocation));
 
   return {
     status: 'routed',

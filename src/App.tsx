@@ -6,6 +6,7 @@ import { TabBar } from './components/TabBar';
 import { LeftPanel } from './components/LeftPanel';
 import { GalleryCenter } from './features/gallery/GalleryCenter';
 import { GalleryRight } from './features/gallery/GalleryRight';
+import { ImageStreamsCenter } from './features/streams/ImageStreamsCenter';
 import { CenterPanel } from './features/workshop/CenterPanel';
 import { RightPanel } from './features/workshop/RightPanel';
 
@@ -50,6 +51,7 @@ function Shell() {
 
   const renderCenter = () => {
     if (activeTab === 'gallery')  return <GalleryCenter />;
+    if (activeTab === 'streams') return <ImageStreamsCenter />;
     if (activeTab === 'workshop') return (
       <CenterPanel
         activePhoto={activePhoto} setActivePhoto={setActivePhoto}
@@ -72,10 +74,16 @@ function Shell() {
       <div style={{ width: 1440, height: 900, transform: `scale(${scale})`, transformOrigin: 'center center', flex: '0 0 auto' }}>
         <div className="app">
           <TopBar />
-          <div className="body">
-            <LeftPanel />
-            {renderCenter()}
-            {renderRight()}
+          <div className={`body ${activeTab === 'streams' ? 'stream-body' : ''}`}>
+            {activeTab === 'streams' ? (
+              <ImageStreamsCenter />
+            ) : (
+              <>
+                <LeftPanel />
+                {renderCenter()}
+                {renderRight()}
+              </>
+            )}
           </div>
           <TabBar />
           <StatusBar />

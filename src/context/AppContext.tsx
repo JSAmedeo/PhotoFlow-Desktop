@@ -2,17 +2,22 @@
 // Owns: sessions, photos, selected session/photo, active tab, selected hour, filter, loading.
 // Does NOT own: zoom, activeTool, split position — those stay as local UI state in App.tsx.
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import type {
   Session,
   Photo,
   CaptureLocation,
+  ImageStream,
   HourBucket,
   TabKey,
   FilterKey,
   ImportQueueItem,
   WatchedFolderSettings,
   WatcherRuntimeState,
+  FileNamingField,
+  FileNamingExtension,
+  FileNamingSeparator,
+  AutoPrintItem,
 } from '../data/models';
 import {
   initStore,
@@ -27,20 +32,26 @@ import {
   deletePhotos as repoDeletePhotos,
   getImportQueue,
   importPhotosToSession as repoImportPhotos,
+  removeImportQueueItem as repoRemoveImportQueueItem,
   clearCompletedImports as repoClearCompletedImports,
   clearImportQueue as repoClearImportQueue,
   getWatchedFolderSettings as repoGetWatchedFolderSettings,
   setWatchedFolderSettings as repoSetWatchedFolderSettings,
+  getImageStreams as repoGetImageStreams,
+  createImageStream as repoCreateImageStream,
+  updateImageStream as repoUpdateImageStream,
+  deleteImageStream as repoDeleteImageStream,
 } from '../data/repository';
 import { resolvePhotoSources } from '../storage/photoSourceResolver';
 import { isTauriRuntime } from '../runtime/runtime';
-import { startWatchedFolder, stopWatchedFolder } from '../ingest/watchedFolderService';
+import { startImageStreamWatchers, stopWatchedFolder } from '../ingest/watchedFolderService';
 
 interface AppState {
   sessions:          Session[];
   allPhotos:         Photo[];
   photos:            Photo[];
   locations:         CaptureLocation[];
+  imageStreams:      ImageStream[];
   hours:             HourBucket[];
   importQueue:       ImportQueueItem[];
   selectedSessionId: string;
@@ -48,6 +59,7 @@ interface AppState {
   selectedPhotoIds:  string[];
   activeTab:         TabKey;
   selectedHour:      string;
+  selectedLocationId: string;
   filter:            FilterKey;
   watchedFolderSettings: WatchedFolderSettings;
   watcherRuntime: WatcherRuntimeState;
@@ -64,14 +76,21 @@ interface AppActions {
   deleteSessionFromGallery: (sessionId: string) => Promise<void>;
   setTab:          (tab: TabKey) => void;
   setHour:         (h: string) => void;
+  setLocationId:   (id: string) => void;
   setFilter:       (f: FilterKey) => void;
   toggleFavorite:  (photoId: string) => void;
   toggleFlag:      (photoId: string) => void;
   importPhotosToActiveSession: (files: File[]) => Promise<void>;
+  removeImportQueueItem: (id: string) => void;
   clearCompletedImports: () => void;
   clearImportQueue: () => void;
   chooseWatchedFolder: () => Promise<void>;
   updateWatchedFolderSettings: (changes: Partial<WatchedFolderSettings>) => Promise<void>;
+  createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
+  updateImageStream: (id: string, changes: Partial<ImageStream>) => Promise<void>;
+  deleteImageStream: (id: string) => Promise<void>;
+  chooseImageStreamFolder: (id: string) => Promise<void>;
+  clearImageStreamFolder: (id: string) => Promise<void>;
   resetDemo:       () => void;
 }
 
@@ -105,6 +124,7 @@ async function applyFreshDemoState(
     setPhotos: (photos: Photo[]) => void;
     setAllPhotos: (photos: Photo[]) => void;
     setLocations: (locations: CaptureLocation[]) => void;
+    setImageStreams: (streams: ImageStream[]) => void;
     setHours: (hours: HourBucket[]) => void;
     setImportQueue: (queue: ImportQueueItem[]) => void;
     setWatchedFolderSettingsState: (settings: WatchedFolderSettings) => void;
@@ -126,6 +146,7 @@ async function applyFreshDemoState(
   setters.setPhotos(resolved.photos);
   setters.setAllPhotos(resolved.allPhotos);
   setters.setLocations(await getLocations());
+  setters.setImageStreams(await repoGetImageStreams());
   setters.setHours(await getHours());
   setters.setImportQueue(await getImportQueue());
   setters.setWatchedFolderSettingsState(await repoGetWatchedFolderSettings());
@@ -139,6 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [allPhotos,         setAllPhotos]         = useState<Photo[]>([]);
   const [photos,            setPhotos]            = useState<Photo[]>([]);
   const [locations,         setLocations]         = useState<CaptureLocation[]>([]);
+  const [imageStreams,      setImageStreams]      = useState<ImageStream[]>([]);
   const [hours,             setHours]             = useState<HourBucket[]>([]);
   const [importQueue,       setImportQueue]       = useState<ImportQueueItem[]>([]);
   const [selectedSessionId, setSession]           = useState<string>('');
@@ -146,12 +168,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedPhotoIds,  setSelectedPhotoIds]  = useState<string[]>([]);
   const [activeTab,         setTabState]          = useState<TabKey>('gallery');
   const [selectedHour,      setHourState]         = useState<string>('14:00');
+  const [selectedLocationId, setLocationIdState]  = useState<string>('');
   const [filter,            setFilterState]       = useState<FilterKey>('All');
   const [watchedFolderSettings, setWatchedFolderSettingsState] = useState<WatchedFolderSettings>(DEFAULT_WATCHED_FOLDER_SETTINGS);
   const [watcherRuntime, setWatcherRuntime] = useState<WatcherRuntimeState>({
     status: isTauriRuntime() ? 'off' : 'desktop-only',
   });
   const [isLoading,         setIsLoading]         = useState(true);
+  const streamWatcherConfig = useMemo(() => JSON.stringify(imageStreams.map(stream => ({
+    id: stream.id,
+    type: stream.type,
+    enabled: stream.enabled,
+    watchPath: stream.watchPath,
+    captureLocationId: stream.captureLocationId,
+    fileRenamingEnabled: stream.fileRenamingEnabled,
+    fileNamingFields: stream.fileNamingFields,
+    fileNamingSeparator: stream.fileNamingSeparator,
+    fileNamingExtension: stream.fileNamingExtension,
+  }))), [imageStreams]);
+  const imageStreamsRef = useRef<ImageStream[]>([]);
+
+  useEffect(() => {
+    imageStreamsRef.current = imageStreams;
+  }, [imageStreams]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -164,6 +203,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAllPhotos(resolved.allPhotos);
         setPhotos(resolved.photos);
         setLocations(await getLocations());
+        setImageStreams(await repoGetImageStreams());
         setHours(await getHours());
         setImportQueue(await getImportQueue());
         const watcherSettings = await repoGetWatchedFolderSettings();
@@ -188,6 +228,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessions(await getSessions());
     setAllPhotos(resolved.allPhotos);
     setPhotos(resolved.photos);
+    setLocations(await getLocations());
+    setImageStreams(await repoGetImageStreams());
     setHours(await getHours());
     setImportQueue(await getImportQueue());
   }, [selectedSessionId]);
@@ -200,10 +242,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return undefined;
     }
 
-    void startWatchedFolder({
-      settings: watchedFolderSettings,
+    void startImageStreamWatchers({
+      streams: imageStreamsRef.current,
+      settleDelayMs: watchedFolderSettings.fileSettleDelayMs,
       sessionId: selectedSessionId,
       onStatus: setWatcherRuntime,
+      onStreamStatus: (streamId, state) => {
+        const nextStatus = state.status === 'importing'
+          ? 'receiving'
+          : state.status === 'watching'
+            ? 'watching'
+            : state.status === 'error'
+              ? 'error'
+              : undefined;
+        setImageStreams(current => current.map(stream => (
+          stream.id === streamId
+            ? {
+              ...stream,
+              status: nextStatus ?? stream.status,
+              lastDetectedFilename: state.lastDetected ?? stream.lastDetectedFilename,
+              lastActivityAt: state.lastDetected || state.lastImport || state.error ? new Date().toISOString() : stream.lastActivityAt,
+            }
+            : stream
+        )));
+      },
       onImported: async () => {
         await refreshData(selectedSessionId);
       },
@@ -212,7 +274,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       void stopWatchedFolder();
     };
-  }, [isLoading, refreshData, selectedSessionId, watchedFolderSettings]);
+  }, [isLoading, refreshData, selectedSessionId, streamWatcherConfig, watchedFolderSettings.fileSettleDelayMs]);
 
   const selectSession = useCallback((id: string, preferredPhotoId?: string) => {
     void (async () => {
@@ -273,6 +335,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void setSelectedHour(h);
   }, []);
 
+  const setLocationId = useCallback((id: string) => {
+    setLocationIdState(id);
+  }, []);
+
   const setFilter = useCallback((f: FilterKey) => {
     setFilterState(f);
   }, []);
@@ -319,12 +385,83 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const removeImportQueueItem = useCallback((id: string) => {
+    void (async () => {
+      await repoRemoveImportQueueItem(id);
+      setImportQueue(q => q.filter(item => item.id !== id));
+    })();
+  }, []);
+
   const clearImportQueue = useCallback(() => {
     void (async () => {
       await repoClearImportQueue();
       setImportQueue([]);
     })();
   }, []);
+
+  const refreshStreamsAndLocations = useCallback(async () => {
+    setImageStreams(await repoGetImageStreams());
+    setLocations(await getLocations());
+  }, []);
+
+  const createImageStream = useCallback(async (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => {
+    await repoCreateImageStream({
+      name: input.name.trim() || `New Stream ${imageStreams.length + 1}`,
+      code: input.code,
+      watchPath: input.watchPath,
+      enabled: input.enabled,
+      processingPreset: input.processingPreset,
+      printerName: input.printerName,
+      autoPrintEnabled: input.autoPrintEnabled,
+      autoPrintItems: input.autoPrintItems,
+      fileRenamingEnabled: input.fileRenamingEnabled,
+      fileNamingFields: input.fileNamingFields,
+      fileNamingSeparator: input.fileNamingSeparator,
+      fileNamingExtension: input.fileNamingExtension,
+    });
+    await refreshStreamsAndLocations();
+  }, [imageStreams.length, refreshStreamsAndLocations]);
+
+  const updateImageStream = useCallback(async (id: string, changes: Partial<ImageStream>) => {
+    await repoUpdateImageStream(id, changes);
+    await refreshStreamsAndLocations();
+  }, [refreshStreamsAndLocations]);
+
+  const deleteImageStream = useCallback(async (id: string) => {
+    await repoDeleteImageStream(id);
+    await refreshStreamsAndLocations();
+  }, [refreshStreamsAndLocations]);
+
+  const chooseImageStreamFolder = useCallback(async (id: string) => {
+    if (!isTauriRuntime()) return;
+
+    try {
+      const dialog = await import('@tauri-apps/plugin-dialog');
+      const selected = await dialog.open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (typeof selected !== 'string') return;
+      await repoUpdateImageStream(id, { watchPath: selected, status: 'idle' });
+      await refreshStreamsAndLocations();
+    } catch (error) {
+      await repoUpdateImageStream(id, {
+        status: 'error',
+        lastActivityAt: new Date().toISOString(),
+      });
+      setWatcherRuntime({
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Could not choose stream folder.',
+      });
+      await refreshStreamsAndLocations();
+    }
+  }, [refreshStreamsAndLocations]);
+
+  const clearImageStreamFolder = useCallback(async (id: string) => {
+    await repoUpdateImageStream(id, { watchPath: null, enabled: false, status: 'disabled' });
+    await refreshStreamsAndLocations();
+  }, [refreshStreamsAndLocations]);
 
   const deleteSelectedPhotos = useCallback(async () => {
     const idsToDelete = selectedPhotoIds.length > 0 ? selectedPhotoIds : selectedPhotoId ? [selectedPhotoId] : [];
@@ -362,7 +499,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const next = { ...watchedFolderSettings, ...changes };
     setWatchedFolderSettingsState(next);
     await repoSetWatchedFolderSettings(next);
-  }, [watchedFolderSettings]);
+    const primaryStream = imageStreams[0];
+    if (primaryStream) {
+      await repoUpdateImageStream(primaryStream.id, {
+        enabled: next.watchEnabled,
+        watchPath: next.watchedImportFolder,
+        status: next.watchEnabled ? (next.watchedImportFolder ? 'watching' : 'idle') : 'disabled',
+      });
+      await refreshStreamsAndLocations();
+    }
+  }, [imageStreams, refreshStreamsAndLocations, watchedFolderSettings]);
 
   const chooseWatchedFolder = useCallback(async () => {
     if (!isTauriRuntime()) return;
@@ -379,6 +525,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await updateWatchedFolderSettings({
         watchedImportFolder: selected,
       });
+      const primaryStream = imageStreams[0];
+      if (primaryStream) {
+        await repoUpdateImageStream(primaryStream.id, { watchPath: selected, status: primaryStream.enabled ? 'watching' : 'idle' });
+        await refreshStreamsAndLocations();
+      }
       setWatcherRuntime({
         status: watchedFolderSettings.watchEnabled ? 'watching' : 'off',
         lastImport: 'Watched folder configured.',
@@ -389,7 +540,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : 'Could not choose watched folder.',
       });
     }
-  }, [updateWatchedFolderSettings, watchedFolderSettings.watchEnabled]);
+  }, [imageStreams, refreshStreamsAndLocations, updateWatchedFolderSettings, watchedFolderSettings.watchEnabled]);
 
   const resetDemo = useCallback(() => {
     void (async () => {
@@ -402,6 +553,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPhotos,
         setAllPhotos,
         setLocations,
+        setImageStreams,
         setHours,
         setImportQueue,
         setWatchedFolderSettingsState,
@@ -413,12 +565,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value: AppContextValue = {
-    sessions, allPhotos, photos, locations, hours, importQueue,
-    selectedSessionId, selectedPhotoId, selectedPhotoIds, activeTab, selectedHour, filter,
+    sessions, allPhotos, photos, locations, imageStreams, hours, importQueue,
+    selectedSessionId, selectedPhotoId, selectedPhotoIds, activeTab, selectedHour, selectedLocationId, filter,
     watchedFolderSettings, watcherRuntime, isLoading,
-    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setFilter,
-    toggleFavorite, toggleFlag, importPhotosToActiveSession, clearCompletedImports, clearImportQueue,
-    chooseWatchedFolder, updateWatchedFolderSettings, resetDemo,
+    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setLocationId, setFilter,
+    toggleFavorite, toggleFlag, importPhotosToActiveSession, removeImportQueueItem, clearCompletedImports, clearImportQueue,
+    chooseWatchedFolder, updateWatchedFolderSettings,
+    createImageStream, updateImageStream, deleteImageStream, chooseImageStreamFolder, clearImageStreamFolder,
+    resetDemo,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

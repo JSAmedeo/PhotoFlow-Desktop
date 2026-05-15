@@ -2,7 +2,7 @@
 
 Local-first desktop application for operational photo workflows at high-volume souvenir photography venues.
 
-## Current Stage: Phase 6 — Watched Folder Ingest
+## Current Stage: Phase 8 — Image Streams Foundation
 
 The app now supports two runtime modes:
 
@@ -35,7 +35,17 @@ npm run tauri:dev
 
 This launches PhotoFlow Desktop in a native desktop window. In this mode, imported image files are copied into the support-friendly managed storage folder at `C:\PhotoFlow Desktop` and metadata is stored in SQLite through the Tauri SQL plugin.
 
-## Watched folder ingest
+## Image streams and watched folder ingest
+
+Phase 8 adds an **Image Streams** page for configuring and monitoring inbound local-folder photo pathways. A stream represents where photos come from, such as Giraffes, Main Gate, Pandas, or Carousel. The page starts with no stream cards; operators add photo ops/streams and those records persist. Streams populate the Capture Location selector/list once configured; filename-based session routing still decides which guest/session receives each photo.
+
+Current supported stream type:
+
+```txt
+local-folder
+```
+
+Future stream types such as API, cloud, or mobile upload streams are placeholders only and are not implemented yet.
 
 In Tauri desktop mode, Session Workshop now includes a compact **Watched Folder** control in the **Local Ingest** panel.
 
@@ -126,6 +136,8 @@ In browser mode, imported images are stored as base64/data URLs in browser `loca
 
 In Tauri desktop mode, imported image bytes are copied into managed storage under `C:\PhotoFlow Desktop`. Photo/session metadata is stored in SQLite using `sqlite:photoflow.db`. SQLite stores metadata and file references only, not original image blobs.
 
+Image stream metadata is stored in the same runtime-selected metadata layer: localStorage in browser mode and SQLite in Tauri mode. Stream-aware import queue/photo records can identify the stream that detected or imported a file where practical.
+
 Phase 7 adds filename-based session routing. Filenames containing the first valid `[A-Z]{3}\d{6}` session ID are routed automatically, with lowercase keys normalized to uppercase. Supported sequence patterns near the session ID, such as `XYZ123456_01.jpg`, `XYZ123456-001.jpg`, and `IMG_4021_XYZ123456_05.jpg`, preserve sequence metadata for display ordering. Operators should not manually create sessions from selected imported photos; sessions are created automatically from parsed filename session IDs.
 
 Files without a valid session ID are treated as unrouted exceptions and are skipped/marked for review instead of silently attaching to the wrong session.
@@ -153,6 +165,7 @@ Current SQLite tables:
 - `capture_locations`
 - `hour_buckets`
 - `import_queue`
+- `image_streams`
 - `app_state`
 
 Migrations run safely during startup. If the SQLite database has no sessions, the app seeds the same demo data used by browser mode.
@@ -194,6 +207,8 @@ PHASE_6_ACCEPTANCE_CHECKLIST.md
 PHASE_6_WATCHED_FOLDER_INGEST.md
 PHASE_7_ACCEPTANCE_CHECKLIST.md
 PHASE_7_FILENAME_SESSION_ROUTING.md
+PHASE_8_ACCEPTANCE_CHECKLIST.md
+PHASE_8_IMAGE_STREAMS.md
 src-tauri/            ← Tauri v2 desktop runtime shell
 src/
   components/         ← shared UI primitives

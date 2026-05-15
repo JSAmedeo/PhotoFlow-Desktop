@@ -27,7 +27,9 @@ The correct framing is:
 | 3 | Basic Photo Ingest | **COMPLETE** |
 | 4 | Desktop Runtime Foundation | **COMPLETE** |
 | 5 | Local Database Foundation | **COMPLETE** |
-| 6 | Watched Folder Ingest | **CURRENT** |
+| 6 | Watched Folder Ingest | **COMPLETE** |
+| 7 | Filename-Based Session Routing | **COMPLETE** |
+| 8 | Image Streams Foundation | **CURRENT** |
 
 ## Phase 1 — Visual MVP Shell (COMPLETE)
 
@@ -142,7 +144,7 @@ Add desktop-only watched-folder ingest:
 
 The Fresh desktop reset control was removed in Phase 7 after Gallery session deletion became available. Operators should delete unwanted sessions/photos through Gallery instead of wiping the managed desktop storage root. Previous app-local imported photo path compatibility was intentionally removed and should not be reintroduced unless explicitly requested.
 
-## Phase 7 — Filename-Based Session Routing (CURRENT)
+## Phase 7 — Filename-Based Session Routing (COMPLETE)
 
 Add deterministic filename-based session routing:
 
@@ -160,6 +162,40 @@ Add deterministic filename-based session routing:
 Capture location parsing and manual capture-location assignment are deferred. Future mobile app metadata should supply capture-location data.
 
 The Processing Queue panel exists, but full processing queue logic and AI/rembg/background processing are deferred.
+
+## Phase 8 — Image Streams Foundation (CURRENT)
+
+Build the Image Streams page and data foundation for multiple inbound photo pathways.
+
+Phase 8 adds:
+
+- `ImageStream` metadata model
+- `image_streams` SQLite table and browser localStorage fallback
+- blank Image Streams starting state until an operator adds photo ops/streams
+- Image Streams tab with stream rail, stream cards after creation, status, counts, folder actions, and recent stream queue activity
+- File Renaming controls per photo op; disabled keeps source filenames, enabled builds watched-folder import names from configured fields
+- Auto-print setup metadata per photo op with print item quantities, print sizes, templates, and printer routing; actual print workflow remains deferred
+- stream-aware import queue/photo metadata fields where practical
+- local-folder streams as the source for capture location dropdown/list options
+- stream-aware watched-folder foundation for enabled desktop local-folder streams
+
+Important conceptual distinction:
+
+- Image Stream = inbound source / capture location pathway
+- Session = customer/barcode grouping parsed from filename
+- Processing Queue = future journey/status view across import and AI processing
+
+Local-folder streams are supported now. API/cloud/mobile streams remain future placeholders only. Stream context is separate from filename-based session routing.
+
+Still deferred unless explicitly reintroduced:
+
+- full Processing Queue activation
+- AI/rembg/model execution
+- API stream ingestion
+- DSLR SDK / Canon SDK / tethering
+- face matching
+- print package routing
+- cloud sync
 
 Still out of scope unless explicitly reintroduced:
 
