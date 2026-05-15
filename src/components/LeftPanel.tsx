@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { CaptureLocation } from '../data/models';
@@ -75,11 +75,19 @@ function LocationSelect({ locations, selectedId, onSelect }: {
 
 export function LeftPanel() {
   const { hours, selectedHour, setHour, locations, importQueue, selectedLocationId, setLocationId } = useApp();
+  const activeHours = hours.filter(h => !h.isEmpty);
   const maxCount = Math.max(...hours.map(h => h.photoCount), 1);
-  const totalSessions = hours.reduce((s, h) => s + h.count, 0);
-  const totalPhotos = hours.reduce((s, h) => s + h.photoCount, 0);
+  const totalSessions = activeHours.reduce((s, h) => s + h.count, 0);
+  const totalPhotos = activeHours.reduce((s, h) => s + h.photoCount, 0);
   const activeImports = importQueue.filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing').length;
   const operatingDate = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+  // Auto-select the most recent active hour when the current selection is empty or invalid.
+  useEffect(() => {
+    if (activeHours.length === 0) return;
+    const isValid = activeHours.some(h => h.h === selectedHour);
+    if (!isValid) setHour(activeHours[activeHours.length - 1].h);
+  }, [activeHours, selectedHour, setHour]);
 
   return (
     <div className="panel left">
@@ -108,20 +116,20 @@ export function LeftPanel() {
       </div>
 
       <div className="panel-scroll grow">
-        {hours.length === 0 && (
+        {activeHours.length === 0 && (
           <div style={{ padding: '24px 14px', color: 'var(--ink-4)', fontSize: 11, lineHeight: 1.4 }}>
             No photos imported today.
           </div>
         )}
-        {hours.map(h => (
+        {activeHours.map(h => (
           <div
             key={h.h}
-            className={`hour-row ${selectedHour === h.h ? 'selected' : ''} ${h.isEmpty ? 'empty' : ''}`}
+            className={`hour-row ${selectedHour === h.h ? 'selected' : ''}`}
             onClick={() => setHour(h.h)}
           >
             <div className="col">
               <div className="h-time">{h.label}</div>
-              <div className="h-sub">{h.isEmpty ? 'No photos taken' : `${h.count} ${h.count === 1 ? 'session' : 'sessions'} · ${h.photoCount} ${h.photoCount === 1 ? 'photo' : 'photos'}`}</div>
+              <div className="h-sub">{`${h.count} ${h.count === 1 ? 'session' : 'sessions'} · ${h.photoCount} ${h.photoCount === 1 ? 'photo' : 'photos'}`}</div>
             </div>
             <div className="row gap-2">
               <span className={`badge-count ${selectedHour === h.h ? 'accent' : ''}`}>{h.photoCount}</span>

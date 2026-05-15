@@ -163,47 +163,60 @@ Capture location parsing and manual capture-location assignment are deferred. Fu
 
 The Processing Queue panel exists, but full processing queue logic and AI/rembg/background processing are deferred.
 
-## Phase 8 — Image Streams Foundation (CURRENT)
+## Phase 8 — Image Streams Foundation (COMPLETE)
 
 Build the Image Streams page and data foundation for multiple inbound photo pathways.
 
-Phase 8 adds:
+**What was built:**
 
-- `ImageStream` metadata model
-- `image_streams` SQLite table and browser localStorage fallback
-- blank Image Streams starting state until an operator adds photo ops/streams
-- Image Streams tab with stream rail, stream cards after creation, status, counts, folder actions, and recent stream queue activity
-- File Renaming controls per photo op; disabled keeps source filenames, enabled builds watched-folder import names from configured fields
-- Auto-print setup metadata per photo op with print item quantities, print sizes, templates, and printer routing; actual print workflow remains deferred
-- stream-aware import queue/photo metadata fields where practical
-- local-folder streams as the source for capture location dropdown/list options
-- stream-aware watched-folder foundation for enabled desktop local-folder streams
+- `ImageStream` model with `id`, `name`, `slug`, `code`, `captureLocationId`, `watchPath`, `enabled`, `fileNaming`, `autoPrint`, `createdAt`, `updatedAt`
+- `AutoPrintItem` model: `id`, `streamId`, `label`, `qty`, `size`, `templateId`, `printerRoute`
+- `FileNamingField` and `FileNamingConfig` for per-stream filename renaming configuration
+- `image_streams` and `auto_print_items` SQLite tables + browser localStorage fallback
+- Image Streams tab (`src/features/streams/ImageStreamsCenter.tsx`) with:
+  - Left rail listing all streams with status indicator, file count, and click-to-focus
+  - Stream cards showing watch path, watcher directory items, live sparkline of recent import activity
+  - Real per-minute sparkline computed from `importQueue` timestamps (30-bucket rolling 30-min window)
+  - "Open in Explorer" button (Tauri desktop only) for each stream's watch path via `reveal_in_explorer` native command
+  - Per-item delete button on watcher directory rows (calls `removeImportQueueItem`)
+  - Watcher row layout: filename · created time · file size · delete
+  - Settings modal for stream configuration (name, watch path, enable/disable)
+  - File Renaming panel: configurable field order per stream; disabled = keep source filenames
+  - Auto-Print Setup modal: print item list with qty steppers, size select, template picker, printer route; actual print workflow deferred
+- `removeImportQueueItem(id)` threaded from store interface → browser store → SQLite store → repository → AppContext
+- `getLocations()` returns active streams as `CaptureLocation[]` when streams exist; falls back to seed locations when no streams are configured
+- Gallery `selectedLocationId` filter: selecting a stream in LeftPanel shows only that stream's sessions
+- `selectedLocationId` and `setLocationId` added to AppContext
+- LeftPanel `LocationSelect` rewired to use context `selectedLocationId`/`setLocationId` with "All Locations" option
+- Import pipeline guard removed: watched-folder import no longer requires a pre-existing fallback session (filename routing auto-creates sessions)
+- `streamName` passed to `saveImportedPhoto` and used in storage path construction
 
-Important conceptual distinction:
+**Storage path structure (revised in Phase 8):**
+```
+C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filename}
+```
+- `streamName` = sanitized stream name (or `captureLocationSlug` or `manual-import` fallback)
+- `mm_yyyy` = zero-padded month + underscore + 4-digit year (e.g. `05_2026`)
+- `dd` = zero-padded day of month
+- `hh` = zero-padded hour of import
+- `sessionKey` = sanitized parsed session key from filename
+- `filename` = original filename (no longer prefixed with photoId)
+- `storage_path` in SQLite is an opaque TEXT column — no migration needed for path structure changes
 
-- Image Stream = inbound source / capture location pathway
-- Session = customer/barcode grouping parsed from filename
-- Processing Queue = future journey/status view across import and AI processing
+**Key architectural notes:**
+- `getLocations()` in `repository.ts` queries streams first; if any exist, maps them to `CaptureLocation[]` using `stream.captureLocationId` as the ID. Session records created during watched-folder import store this same `captureLocationId`, enabling gallery filtering.
+- UI components never directly call Tauri SQL or filesystem APIs.
+- `reveal_in_explorer` Tauri command registered in `src-tauri/src/lib.rs` using `std::process::Command` (cross-platform: explorer/open/xdg-open).
 
-Local-folder streams are supported now. API/cloud/mobile streams remain future placeholders only. Stream context is separate from filename-based session routing.
-
-Still deferred unless explicitly reintroduced:
-
-- full Processing Queue activation
+**Deferred (Phase 8 hard rules, still out of scope):**
+- Full Processing Queue activation
 - AI/rembg/model execution
 - API stream ingestion
 - DSLR SDK / Canon SDK / tethering
-- face matching
-- print package routing
-- cloud sync
-
-Still out of scope unless explicitly reintroduced:
-
-- DSLR SDK / Canon SDK / tethering
-- face matching
-- print package routing
-- source folder cleanup/archive movement
-- cloud sync
+- Face matching
+- Print package routing
+- Source folder cleanup/archive movement
+- Cloud sync
 
 ## Future — Operator Correction Tools
 

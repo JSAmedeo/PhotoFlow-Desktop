@@ -55,35 +55,37 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 5 | Local Database Foundation | **COMPLETE** |
 | 6 | Watched Folder Ingest | **COMPLETE** |
 | 7 | Filename-Based Session Routing | **COMPLETE** |
-| 8 | Image Streams Foundation | **CURRENT** |
+| 8 | Image Streams Foundation | **COMPLETE** |
+| 9 | (TBD) | **NEXT** |
 
-## Phase 8 — Current Focus
+## Phase 8 — Previous Focus (COMPLETE)
 
 **Goal:** Build the Image Streams page and data foundation for multiple inbound local-folder photo pathways while preserving browser mode, Tauri mode, manual import, watched-folder import, filename session routing, and managed storage under `C:\PhotoFlow Desktop`.
 
-Phase 8 concepts:
-- Image Stream = inbound source / capture location pathway
-- Session = customer/barcode grouping parsed from filename
-- Processing Queue = future journey/status view across import and AI processing
+**What was built:**
+- `ImageStream`, `AutoPrintItem`, `FileNamingField`, `FileNamingConfig` data models
+- `image_streams` + `auto_print_items` SQLite tables and browser localStorage fallback
+- Image Streams tab (`src/features/streams/ImageStreamsCenter.tsx`): stream rail, stream cards, watcher directory rows, live sparkline, settings modal, File Renaming panel, Auto-Print Setup modal
+- `removeImportQueueItem` through the full store/repository/context stack
+- `reveal_in_explorer` Tauri native command (cross-platform: explorer/open/xdg-open)
+- `getLocations()` returns streams as `CaptureLocation[]` when streams exist; falls back to seed data when none configured
+- Gallery location filtering: `selectedLocationId` + `setLocationId` in AppContext; LeftPanel `LocationSelect` wired to context
+- Import pipeline guard removed — watched-folder import no longer requires a pre-existing session
+- Revised managed storage path: `C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filename}`
 
-Current stream support:
-- local-folder streams are supported
-- API/cloud/mobile streams are future placeholders only
-- streams populate the existing capture location dropdown/list
-- photo-op File Renaming is configurable per stream; disabled keeps incoming filenames unchanged
-- photo-op Auto-print setup stores intended print items/routing metadata, but does not activate print workflow
-- stream context is separate from filename-based session routing
-- stream metadata belongs in the metadata store/repository layer, not UI components
+**Key architectural rules established in Phase 8:**
+- `getLocations()` queries streams first. If any exist, they are returned as the location list. Sessions created during import store the stream's `captureLocationId`, enabling gallery filtering.
+- `storage_path` in SQLite is opaque TEXT — the path structure can change without DB migrations.
+- UI components must not import Tauri SQL or filesystem APIs directly.
+- Streams populate the capture location dropdown; they are not the same concept as filename-based session routing.
 
-Hard rules for Phase 8:
-- Do not implement AI/rembg processing.
-- Do not activate full Processing Queue logic.
-- Do not implement API stream ingestion.
-- Do not build DSLR SDK, Canon SDK, tethering, face matching, print package routing, or archive movement.
-- Do not add cloud sync.
-- Do not redesign the UI.
-- Do not reintroduce old app-local imported path compatibility.
-- Preserve browser fallback mode.
+**Still deferred (Phase 8 hard rules remain):**
+- Full Processing Queue activation
+- AI/rembg processing
+- API/cloud/mobile stream ingestion
+- DSLR SDK, Canon SDK, tethering, face matching
+- Print package routing and archive movement
+- Cloud sync
 
 ## Phase 7 — Previous Focus
 
@@ -129,7 +131,7 @@ Primary reference: `snapdesk.html` — open in browser to compare against the ru
 
 Do not delete or modify the handoff folder. Use it as ongoing visual direction for all phases.
 
-## Project Structure (as of Phase 5)
+## Project Structure (as of Phase 8)
 
 ```
 src/
@@ -140,30 +142,45 @@ src/
     Seg.tsx          ← segmented control
     Check.tsx        ← checkbox
     TopBar.tsx
-    LeftPanel.tsx    ← reads hours/locations from context
+    LeftPanel.tsx    ← location select + hourly folders; selectedLocationId wired to context
     TabBar.tsx       ← reads/sets activeTab via context
     StatusBar.tsx    ← reads session data from context
   features/
     gallery/
-      GalleryCenter.tsx
+      GalleryCenter.tsx  ← filters sessions by selectedLocationId from context
       GalleryRight.tsx
     workshop/
       CenterPanel.tsx
       RightPanel.tsx
       HourFilmstrip.tsx
+    streams/
+      ImageStreamsCenter.tsx  ← stream rail, cards, sparkline, watcher rows, modals
   data/
     models.ts        ← all TypeScript interfaces and types
     seedData.ts      ← 14 seed sessions, generated photos, 4 locations, 12 hour buckets
     localStore.ts    ← raw browser localStorage helpers
-    repository.ts    ← public data API (getSessions, updatePhotoMetadata, resetDemoData, etc.)
+    repository.ts    ← public data API; getLocations() returns streams when any exist
     stores/          ← metadata store interface, browser store, SQLite store, store factory
     db/              ← SQLite connection, schema, and migrations
+  ingest/
+    filenameParser.ts         ← parses session key + sequence from filenames
+    sessionRoutingService.ts  ← finds or creates sessions from parsed filename data
+    autoImportPipeline.ts     ← orchestrates file → session → photo creation
+    watchedFolderService.ts   ← Tauri filesystem watcher, stability checks
+    watchedFolderTypes.ts     ← watcher types
+  storage/
+    photoStorage.ts           ← PhotoStorageService interface + SavePhotoContext
+    tauriPhotoStorage.ts      ← writes files to C:\PhotoFlow Desktop\photos\...
+    browserPhotoStorage.ts    ← base64 data URL fallback for browser mode
   context/
-    AppContext.tsx   ← data state only (sessions, selectedSessionId, photos, tab, hour, filter)
+    AppContext.tsx   ← data state: sessions, photos, tab, hour, filter, selectedLocationId
   styles/
     global.css       ← full CSS design system
   App.tsx            ← AppProvider wrapper; UI-only state (zoom, activeTool, split) stays here
   main.tsx
+src-tauri/
+  src/
+    lib.rs           ← Tauri commands including reveal_in_explorer
 public/
   demo-assets/       ← before.jpg, after.png (demo photos)
 design-handoff/      ← reference only, do not modify
@@ -196,17 +213,52 @@ Photo {
   id, sessionId, filename, thumbnailUrl, displayUrl,
   beforeImageUrl, afterImageUrl, createdAt, captureLocationId,
   processingStatus, flag, isFavorite, isHidden, operatorNotes,
-  enhanceVersion, width, height, fileSizeMb, fileFormat
+  enhanceVersion, width, height, fileSizeMb, fileFormat,
+  storageKind, storagePath, imageStreamId
+}
+
+ImportQueueItem {
+  id, filename, status, sessionId, imageStreamId,
+  detectedAt, importedAt, createdAt, fileSize, error
 }
 
 CaptureLocation { id, name, code, isActive }
 HourBucket      { h, label, sub, count, flagged }
+
+// Phase 8 additions
+ImageStream {
+  id, name, slug, code, captureLocationId, watchPath,
+  enabled, fileNaming, autoPrint, createdAt, updatedAt
+}
+
+FileNamingField: 'sessionKey' | 'sequence' | 'date' | 'streamCode' | 'original'
+FileNamingConfig { enabled: boolean; fields: FileNamingField[] }
+
+AutoPrintItem {
+  id, streamId, label, qty, size, templateId, printerRoute
+}
+
 ProcessingStatus: 'pending' | 'processing' | 'done' | 'warn' | 'error'
 PhotoFlag:        'none' | 'flagged' | 'rejected' | 'favorite'
 SessionStatus:    'active' | 'complete' | 'flagged' | 'archived'
 TabKey:           'gallery' | 'workshop' | 'streams' | 'print' | 'config'
 FilterKey:        'All' | 'Flagged' | 'Processed' | 'Pending'
 ```
+
+## Managed Storage Path (Phase 8)
+
+Tauri desktop mode writes imported files to:
+```
+C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filename}
+```
+- `streamName` = sanitized stream name, or `captureLocationSlug`, or `manual-import` fallback
+- `mm_yyyy` = e.g. `05_2026`
+- `storage_path` in SQLite is opaque TEXT — the path layout can change without a DB migration
+- `resolvePhotoSource()` in `tauriPhotoStorage.ts` converts the stored absolute path to a displayable `convertFileSrc()` URL at runtime
+
+## Location / Stream Relationship
+
+`getLocations()` in `repository.ts` returns streams as `CaptureLocation[]` when any streams exist. If no streams are configured, it falls back to seed locations. Session records created during watched-folder import store the stream's `captureLocationId`, which is what `GalleryCenter` uses to filter sessions by selected location. This is the mechanism that wires "select a stream in the left panel → see only that stream's sessions in the gallery."
 
 ## Coding Rules
 

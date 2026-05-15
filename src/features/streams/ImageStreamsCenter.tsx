@@ -584,19 +584,37 @@ function AutoPrintSetupDialog({ stream, onClose }: { stream: ImageStream; onClos
   );
 }
 
+interface FolderFileEntry {
+  name: string;
+  size: number;
+  modified_ms: number | null;
+}
+
 function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStream; isSelected: boolean; onSelect: (id: string) => void }) {
-  const {
-    updateImageStream,
-    removeImportQueueItem,
-    importQueue,
-  } = useApp();
+  const { updateImageStream, importQueue } = useApp();
   const [autoPrintOpen, setAutoPrintOpen] = useState(false);
+  const [folderFiles, setFolderFiles] = useState<FolderFileEntry[]>([]);
   const isDesktop = isTauriRuntime();
-  const recent = importQueue
-    .filter(item => item.imageStreamId === stream.id)
-    .slice(-7)
-    .reverse();
   const sparkData = useMemo(() => computeSparkline(stream.id, importQueue), [stream.id, importQueue]);
+
+  useEffect(() => {
+    if (!isDesktop || !stream.watchPath) {
+      setFolderFiles([]);
+      return;
+    }
+    const poll = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const files = await invoke<FolderFileEntry[]>('list_folder_files', { path: stream.watchPath });
+        setFolderFiles(files);
+      } catch {
+        setFolderFiles([]);
+      }
+    };
+    void poll();
+    const interval = setInterval(() => void poll(), 2000);
+    return () => clearInterval(interval);
+  }, [isDesktop, stream.watchPath]);
   const color = statusColor(stream.status, stream.enabled);
 
   return (
@@ -680,33 +698,30 @@ function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStream; isS
         </div>
       </div>
 
-      {/* Watcher directory */}
+      {/* Watcher directory — live folder view */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#0a0b0d' }}>
         <div className="row" style={{ padding: '6px 10px', borderBottom: '1px solid var(--line-soft)', gap: 8 }}>
           <span className="mono" style={{ fontSize: 9.5, letterSpacing: '0.1em', color: 'var(--ink-4)' }}>WATCHER DIRECTORY</span>
           <span className="grow" />
-          <span className="mono" style={{ fontSize: 9.5, color: 'var(--ink-5)' }}>NAME · CREATED · SIZE</span>
+          <span className="mono" style={{ fontSize: 9.5, color: 'var(--ink-5)' }}>NAME · MODIFIED · SIZE</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-          {recent.length === 0 ? (
+          {!isDesktop || !stream.watchPath ? (
+            <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— desktop only —</div>
+          ) : folderFiles.length === 0 ? (
             <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— folder empty —</div>
-          ) : recent.map(item => (
-            <div key={item.id} className="stream-file-row" onClick={e => e.stopPropagation()}>
+          ) : folderFiles.slice(0, 8).map(file => (
+            <div key={file.name} className="stream-file-row" onClick={e => e.stopPropagation()}>
               <span className="mono stream-file-name">
                 <FileImage size={10} style={{ color: 'var(--ink-4)', verticalAlign: -1, marginRight: 4, flexShrink: 0 }} />
-                {item.filename}
+                {file.name}
               </span>
-              <span className="mono" style={{ color: 'var(--ink-4)', fontSize: 10, textAlign: 'right' }}>{fmtTime(item.importedAt ?? item.createdAt)}</span>
+              <span className="mono" style={{ color: 'var(--ink-4)', fontSize: 10, textAlign: 'right' }}>
+                {file.modified_ms != null ? fmtTime(new Date(file.modified_ms).toISOString()) : '—'}
+              </span>
               <span className="mono" style={{ color: 'var(--ink-5)', fontSize: 10, textAlign: 'right' }}>
-                {item.fileSize != null ? `${(item.fileSize / (1024 * 1024)).toFixed(1)} MB` : '—'}
+                {`${(file.size / (1024 * 1024)).toFixed(1)} MB`}
               </span>
-              <button
-                className="icon-btn stream-file-delete"
-                title="Remove from queue"
-                onClick={() => removeImportQueueItem(item.id)}
-              >
-                <Trash2 size={10} />
-              </button>
             </div>
           ))}
         </div>

@@ -1,34 +1,50 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { Seg } from '../../components/Seg';
 import { useApp } from '../../context/AppContext';
-import { HOUR_SHORT } from '../../data/models';
 import type { FilterKey } from '../../data/models';
 
 export function GalleryCenter() {
   const {
     sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
-    selectedLocationId, locations,
+    selectedLocationId, locations, hours,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
     deleteSessionFromGallery, setTab, filter, setFilter,
   } = useApp();
   const [search, setSearch] = useState('');
 
-  const short = HOUR_SHORT[selectedHour] ?? selectedHour;
   const totalImages = sessions.reduce((sum, s) => sum + s.photoCount, 0);
-
   const activeLocation = selectedLocationId ? locations.find(l => l.id === selectedLocationId) : undefined;
+
+  // Build the set of session IDs that have photos imported in the selected hour today.
+  // When hours.length === 0 (no import activity yet — seed/demo mode), hour filtering is skipped.
+  const sessionIdsInSelectedHour = useMemo(() => {
+    if (hours.length === 0) return null;
+    const hourNum = parseInt(selectedHour, 10);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfTomorrow = startOfToday + 86_400_000;
+    const set = new Set<string>();
+    for (const photo of allPhotos) {
+      if (!photo.importedAt) continue;
+      const t = new Date(photo.importedAt).getTime();
+      if (isNaN(t) || t < startOfToday || t >= startOfTomorrow) continue;
+      if (new Date(t).getHours() === hourNum) set.add(photo.sessionId);
+    }
+    return set;
+  }, [allPhotos, hours.length, selectedHour]);
 
   const filtered = sessions.filter(s => {
     const matchLocation = !selectedLocationId || s.captureLocationId === selectedLocationId;
+    const matchHour = !sessionIdsInSelectedHour || sessionIdsInSelectedHour.has(s.id);
     const matchSearch = s.sessionCode.toLowerCase().includes(search.toLowerCase());
     const matchFilter =
       filter === 'All'       ? true :
       filter === 'Flagged'   ? s.status === 'flagged' :
       filter === 'Processed' ? s.status === 'complete' :
       filter === 'Pending'   ? s.status === 'active' : true;
-    return matchLocation && matchSearch && matchFilter;
+    return matchLocation && matchHour && matchSearch && matchFilter;
   });
 
   return (
@@ -37,10 +53,15 @@ export function GalleryCenter() {
       <div className="row" style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)', background: 'var(--bg-1)', gap: 10 }}>
         <div className="row gap-2">
           <span className="uppercase">Gallery</span>
-          {activeLocation && (
-            <span className="mono pill accent">{activeLocation.name}</span>
+          {activeLocation && <span className="mono pill accent">{activeLocation.name}</span>}
+          {sessionIdsInSelectedHour && (
+            <span className="mono pill" style={{ color: 'var(--ink-3)', borderColor: 'var(--line)', background: 'transparent' }}>
+              {selectedHour.slice(0, 2) === '00' ? '12 AM' :
+               parseInt(selectedHour) < 12 ? `${parseInt(selectedHour)} AM` :
+               parseInt(selectedHour) === 12 ? '12 PM' :
+               `${parseInt(selectedHour) - 12} PM`}
+            </span>
           )}
-          {!activeLocation && <span className="mono pill accent">{short}</span>}
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>
             {filtered.length}{sessions.length !== filtered.length ? `/${sessions.length}` : ''} sessions · {totalImages} images
           </span>
