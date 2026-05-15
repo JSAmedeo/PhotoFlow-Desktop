@@ -74,13 +74,21 @@ function LocationSelect({ locations, selectedId, onSelect }: {
 }
 
 export function LeftPanel() {
-  const { hours, selectedHour, setHour, locations, importQueue, selectedLocationId, setLocationId } = useApp();
+  const { hours, selectedHour, setHour, locations, importQueue, selectedLocationId, setLocationId, operatingDate, setOperatingDate } = useApp();
   const activeHours = hours.filter(h => !h.isEmpty);
   const maxCount = Math.max(...hours.map(h => h.photoCount), 1);
   const totalSessions = activeHours.reduce((s, h) => s + h.count, 0);
   const totalPhotos = activeHours.reduce((s, h) => s + h.photoCount, 0);
   const activeImports = importQueue.filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing').length;
-  const operatingDate = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const operatingDateLabel = operatingDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const todayMidnight = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+  const isToday = operatingDate.getTime() === todayMidnight.getTime();
+
+  const stepDate = (direction: -1 | 1) => {
+    const next = new Date(operatingDate);
+    next.setDate(next.getDate() + direction);
+    setOperatingDate(next);
+  };
 
   // Auto-select the most recent active hour when the current selection is empty or invalid.
   useEffect(() => {
@@ -99,12 +107,12 @@ export function LeftPanel() {
       <div className="panel-section">
         <div className="uppercase" style={{ marginBottom: 6 }}>Operating Date</div>
         <div className="row gap-2" style={{ justifyContent: 'space-between' }}>
-          <button className="icon-btn"><ChevronLeft size={14} /></button>
+          <button className="icon-btn" onClick={() => stepDate(-1)} title="Previous day"><ChevronLeft size={14} /></button>
           <div className="row gap-2">
-            <Calendar size={13} style={{ color: 'var(--ink-3)' }} />
-            <span style={{ fontWeight: 500, fontSize: 12 }}>{operatingDate}</span>
+            <Calendar size={13} style={{ color: isToday ? 'var(--accent)' : 'var(--ink-3)' }} />
+            <span style={{ fontWeight: 500, fontSize: 12 }}>{operatingDateLabel}</span>
           </div>
-          <button className="icon-btn"><ChevronRight size={14} /></button>
+          <button className="icon-btn" onClick={() => stepDate(1)} disabled={isToday} style={isToday ? { opacity: 0.3, cursor: 'not-allowed' } : undefined} title="Next day"><ChevronRight size={14} /></button>
         </div>
       </div>
 

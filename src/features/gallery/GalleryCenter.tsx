@@ -8,7 +8,7 @@ import type { FilterKey } from '../../data/models';
 export function GalleryCenter() {
   const {
     sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
-    selectedLocationId, locations, hours,
+    selectedLocationId, locations, hours, operatingDate,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
     deleteSessionFromGallery, setTab, filter, setFilter,
   } = useApp();
@@ -22,18 +22,17 @@ export function GalleryCenter() {
   const sessionIdsInSelectedHour = useMemo(() => {
     if (hours.length === 0) return null;
     const hourNum = parseInt(selectedHour, 10);
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const startOfTomorrow = startOfToday + 86_400_000;
+    const startOfDay = operatingDate.getTime();
+    const endOfDay = startOfDay + 86_400_000;
     const set = new Set<string>();
     for (const photo of allPhotos) {
       if (!photo.importedAt) continue;
       const t = new Date(photo.importedAt).getTime();
-      if (isNaN(t) || t < startOfToday || t >= startOfTomorrow) continue;
+      if (isNaN(t) || t < startOfDay || t >= endOfDay) continue;
       if (new Date(t).getHours() === hourNum) set.add(photo.sessionId);
     }
     return set;
-  }, [allPhotos, hours.length, selectedHour]);
+  }, [allPhotos, hours.length, selectedHour, operatingDate]);
 
   const filtered = sessions.filter(s => {
     const matchLocation = !selectedLocationId || s.captureLocationId === selectedLocationId;

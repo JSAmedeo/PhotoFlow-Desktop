@@ -417,10 +417,12 @@ function hourLabel(hour: number): string {
   return `${format(hour)} - ${format(next)}`;
 }
 
-function buildHourlyImportBuckets(photos: Photo[]): HourBucket[] {
-  const today = startOfToday();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
+export function buildHourlyImportBuckets(photos: Photo[], date?: Date): HourBucket[] {
+  const day = date
+    ? new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    : startOfToday();
+  const nextDay = new Date(day);
+  nextDay.setDate(day.getDate() + 1);
 
   const buckets = new Map<number, { sessions: Set<string>; photoCount: number }>();
 
@@ -428,7 +430,7 @@ function buildHourlyImportBuckets(photos: Photo[]): HourBucket[] {
     if (!photo.importedAt) continue;
     const importedAt = new Date(photo.importedAt);
     if (Number.isNaN(importedAt.getTime())) continue;
-    if (importedAt < today || importedAt >= tomorrow) continue;
+    if (importedAt < day || importedAt >= nextDay) continue;
 
     const hour = importedAt.getHours();
     const bucket = buckets.get(hour) ?? { sessions: new Set<string>(), photoCount: 0 };
@@ -706,8 +708,8 @@ export async function getLocations(): Promise<CaptureLocation[]> {
   return store.getLocations();
 }
 
-export async function getHours(): Promise<HourBucket[]> {
-  return buildHourlyImportBuckets(await getPhotos());
+export async function getHours(date?: Date): Promise<HourBucket[]> {
+  return buildHourlyImportBuckets(await getPhotos(), date);
 }
 
 // ----- Persisted UI state ----------------------------------------------------

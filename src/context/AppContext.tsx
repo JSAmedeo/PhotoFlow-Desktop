@@ -21,7 +21,7 @@ import type {
 } from '../data/models';
 import {
   initStore,
-  getSessions, getPhotos, getPhotosBySessionId, getLocations, getHours,
+  getSessions, getPhotos, getPhotosBySessionId, getLocations,
   getSelectedSessionId, setSelectedSessionId,
   getSelectedPhotoId,   setSelectedPhotoId,
   getActiveTab,         setActiveTab,
@@ -41,6 +41,7 @@ import {
   createImageStream as repoCreateImageStream,
   updateImageStream as repoUpdateImageStream,
   deleteImageStream as repoDeleteImageStream,
+  buildHourlyImportBuckets,
 } from '../data/repository';
 import { resolvePhotoSources } from '../storage/photoSourceResolver';
 import { isTauriRuntime } from '../runtime/runtime';
@@ -60,6 +61,7 @@ interface AppState {
   activeTab:         TabKey;
   selectedHour:      string;
   selectedLocationId: string;
+  operatingDate:     Date;
   filter:            FilterKey;
   watchedFolderSettings: WatchedFolderSettings;
   watcherRuntime: WatcherRuntimeState;
@@ -75,9 +77,10 @@ interface AppActions {
   deleteSelectedPhotos: () => Promise<void>;
   deleteSessionFromGallery: (sessionId: string) => Promise<void>;
   setTab:          (tab: TabKey) => void;
-  setHour:         (h: string) => void;
-  setLocationId:   (id: string) => void;
-  setFilter:       (f: FilterKey) => void;
+  setHour:           (h: string) => void;
+  setLocationId:     (id: string) => void;
+  setOperatingDate:  (d: Date) => void;
+  setFilter:         (f: FilterKey) => void;
   toggleFavorite:  (photoId: string) => void;
   toggleFlag:      (photoId: string) => void;
   importPhotosToActiveSession: (files: File[]) => Promise<void>;
@@ -125,7 +128,6 @@ async function applyFreshDemoState(
     setAllPhotos: (photos: Photo[]) => void;
     setLocations: (locations: CaptureLocation[]) => void;
     setImageStreams: (streams: ImageStream[]) => void;
-    setHours: (hours: HourBucket[]) => void;
     setImportQueue: (queue: ImportQueueItem[]) => void;
     setWatchedFolderSettingsState: (settings: WatchedFolderSettings) => void;
     setTabState: (tab: TabKey) => void;
@@ -147,7 +149,6 @@ async function applyFreshDemoState(
   setters.setAllPhotos(resolved.allPhotos);
   setters.setLocations(await getLocations());
   setters.setImageStreams(await repoGetImageStreams());
-  setters.setHours(await getHours());
   setters.setImportQueue(await getImportQueue());
   setters.setWatchedFolderSettingsState(await repoGetWatchedFolderSettings());
   setters.setTabState('gallery');
@@ -161,8 +162,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [photos,            setPhotos]            = useState<Photo[]>([]);
   const [locations,         setLocations]         = useState<CaptureLocation[]>([]);
   const [imageStreams,      setImageStreams]      = useState<ImageStream[]>([]);
-  const [hours,             setHours]             = useState<HourBucket[]>([]);
   const [importQueue,       setImportQueue]       = useState<ImportQueueItem[]>([]);
+  const [operatingDate,     setOperatingDateRaw]  = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  });
+  // hours is derived from allPhotos + operatingDate — no separate fetch needed when date changes
+  const hours = useMemo(() => buildHourlyImportBuckets(allPhotos, operatingDate), [allPhotos, operatingDate]);
   const [selectedSessionId, setSession]           = useState<string>('');
   const [selectedPhotoId,   setPhoto]             = useState<string>('');
   const [selectedPhotoIds,  setSelectedPhotoIds]  = useState<string[]>([]);
@@ -204,7 +210,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPhotos(resolved.photos);
         setLocations(await getLocations());
         setImageStreams(await repoGetImageStreams());
-        setHours(await getHours());
         setImportQueue(await getImportQueue());
         const watcherSettings = await repoGetWatchedFolderSettings();
         setWatchedFolderSettingsState(watcherSettings);
@@ -230,7 +235,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPhotos(resolved.photos);
     setLocations(await getLocations());
     setImageStreams(await repoGetImageStreams());
-    setHours(await getHours());
     setImportQueue(await getImportQueue());
   }, [selectedSessionId]);
 
@@ -337,6 +341,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setLocationId = useCallback((id: string) => {
     setLocationIdState(id);
+  }, []);
+
+  const setOperatingDate = useCallback((d: Date) => {
+    const todayMidnight = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+    // Clamp to today — future dates have no import data
+    setOperatingDateRaw(d > todayMidnight ? todayMidnight : d);
   }, []);
 
   const setFilter = useCallback((f: FilterKey) => {
@@ -491,7 +501,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedPhotoIds(nextPhotoId ? [nextPhotoId] : []);
     await setSelectedSessionId(nextSessionId);
     await setSelectedPhotoId(nextPhotoId);
-    setHours(await getHours());
     await refreshData(nextSessionId);
   }, [refreshData, selectedSessionId, sessions]);
 
@@ -554,7 +563,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAllPhotos,
         setLocations,
         setImageStreams,
-        setHours,
         setImportQueue,
         setWatchedFolderSettingsState,
         setTabState,
@@ -566,9 +574,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     sessions, allPhotos, photos, locations, imageStreams, hours, importQueue,
-    selectedSessionId, selectedPhotoId, selectedPhotoIds, activeTab, selectedHour, selectedLocationId, filter,
+    selectedSessionId, selectedPhotoId, selectedPhotoIds, activeTab, selectedHour, selectedLocationId, operatingDate, filter,
     watchedFolderSettings, watcherRuntime, isLoading,
-    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setLocationId, setFilter,
+    selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setLocationId, setOperatingDate, setFilter,
     toggleFavorite, toggleFlag, importPhotosToActiveSession, removeImportQueueItem, clearCompletedImports, clearImportQueue,
     chooseWatchedFolder, updateWatchedFolderSettings,
     createImageStream, updateImageStream, deleteImageStream, chooseImageStreamFolder, clearImageStreamFolder,

@@ -1,10 +1,9 @@
-import { useRef, useState } from 'react';
-import { Check as CheckIcon, AlertTriangle, Upload, Trash2, FolderOpen, Pause, Play } from 'lucide-react';
+import { useState } from 'react';
+import { Check as CheckIcon, AlertTriangle } from 'lucide-react';
 import { Slider } from '../../components/Slider';
 import { Select } from '../../components/Select';
 import { Seg } from '../../components/Seg';
 import { Check } from '../../components/Check';
-import { useApp } from '../../context/AppContext';
 
 function SectionHead({ label, count, action }: { label: string; count?: string; action?: React.ReactNode }) {
   return (
@@ -31,18 +30,6 @@ function LabeledSlider({ label, value, onChange, fmt }: { label: string; value: 
 }
 
 export function RightPanel() {
-  const {
-    sessions,
-    selectedSessionId,
-    importQueue,
-    importPhotosToActiveSession,
-    clearCompletedImports,
-    clearImportQueue,
-    watchedFolderSettings,
-    watcherRuntime,
-    chooseWatchedFolder,
-    updateWatchedFolderSettings,
-  } = useApp();
   const [bgModel,     setBgModel]     = useState('Local Service - General Model');
   const [sensitivity, setSensitivity] = useState(72);
   const [feather,     setFeather]     = useState(18);
@@ -56,20 +43,6 @@ export function RightPanel() {
   const [autoApply,   setAutoApply]   = useState(true);
   const [enhAuto,     setEnhAuto]     = useState(true);
   const [enhModel,    setEnhModel]    = useState('Local Model - Real-ESRGAN + GFPGAN');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const activeSession = sessions.find(s => s.id === selectedSessionId);
-  const queueForSession = importQueue.filter(item => item.sessionId === selectedSessionId);
-  const completeCount = queueForSession.filter(item => item.status === 'complete').length;
-  const skippedCount = queueForSession.filter(item => item.status === 'skipped').length;
-  const failedCount = queueForSession.filter(item => item.status === 'failed').length;
-  const activeCount = queueForSession.filter(item => item.status === 'queued' || item.status === 'stabilizing' || item.status === 'importing').length;
-  const watchedFolderLabel = watchedFolderSettings.watchedImportFolder?.split(/[\\/]/).filter(Boolean).pop() ?? 'Not configured';
-
-  const handleFiles = async (files: FileList | null) => {
-    const picked = Array.from(files ?? []);
-    if (picked.length > 0) await importPhotosToActiveSession(picked);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
 
   return (
     <div className="panel right">
@@ -139,126 +112,6 @@ export function RightPanel() {
               <Check on={true}  onClick={() => {}} label="Preserve faces" />
               <Check on={false} onClick={() => {}} label="GFPGAN" />
             </div>
-          </div>
-        </div>
-
-        {/* Local ingest */}
-        <div className="panel-section">
-          <SectionHead
-            label="Local Ingest"
-            count={`${completeCount} imported`}
-            action={queueForSession.length > 0 ? (
-              <button className="icon-btn" onClick={clearCompletedImports} title="Clear completed imports">
-                <Trash2 size={13} />
-              </button>
-            ) : undefined}
-          />
-          <div className="col" style={{ gap: 8 }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={e => void handleFiles(e.target.files)}
-            />
-            <button
-              className="btn primary block"
-              disabled={!activeSession}
-              onClick={() => fileInputRef.current?.click()}
-              style={!activeSession ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-            >
-              <Upload size={13} /> Import Photos
-            </button>
-            <div className="row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
-              <span style={{ color: 'var(--ink-3)' }}>Destination</span>
-              <span className="mono" style={{ color: 'var(--ink)' }}>{activeSession?.sessionCode ?? 'No session'}</span>
-            </div>
-            <div className="row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
-              <span style={{ color: 'var(--ink-3)' }}>Formats</span>
-              <span className="mono" style={{ color: 'var(--ink-2)' }}>image/* · demo storage</span>
-            </div>
-            <div style={{ height: 1, background: 'var(--line-soft)', margin: '2px 0' }} />
-            <SectionHead
-              label="Watched Folder"
-              count={watcherRuntime.status}
-              action={watcherRuntime.status !== 'desktop-only' ? (
-                <button
-                  className="icon-btn"
-                  onClick={() => void updateWatchedFolderSettings({ watchEnabled: !watchedFolderSettings.watchEnabled })}
-                  title={watchedFolderSettings.watchEnabled ? 'Disable watcher' : 'Enable watcher'}
-                >
-                  {watchedFolderSettings.watchEnabled ? <Pause size={13} /> : <Play size={13} />}
-                </button>
-              ) : undefined}
-            />
-            <div className="col" style={{ gap: 6 }}>
-              {watcherRuntime.status === 'desktop-only' ? (
-                <div style={{ fontSize: 10.5, color: 'var(--ink-4)', lineHeight: 1.35 }}>
-                  Watched folder ingest is available in Tauri desktop mode only.
-                </div>
-              ) : (
-                <>
-                  <button className="btn block" onClick={() => void chooseWatchedFolder()}>
-                    <FolderOpen size={13} /> Choose Folder
-                  </button>
-                  <div className="row" style={{ justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
-                    <span style={{ color: 'var(--ink-3)' }}>Path</span>
-                    <span className="mono" title={watchedFolderSettings.watchedImportFolder ?? undefined} style={{ color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {watchedFolderLabel}
-                    </span>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
-                    <span style={{ color: 'var(--ink-3)' }}>Last detected</span>
-                    <span className="mono" style={{ color: 'var(--ink-2)' }}>{watcherRuntime.lastDetected ?? 'none'}</span>
-                  </div>
-                  <div style={{
-                    fontSize: 10.5,
-                    color: watcherRuntime.status === 'error' ? 'var(--danger)' : 'var(--ink-3)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }} title={watcherRuntime.error ?? watcherRuntime.lastImport}>
-                    {watcherRuntime.error ?? watcherRuntime.lastImport ?? 'No watched-folder imports yet.'}
-                  </div>
-                </>
-              )}
-            </div>
-            {queueForSession.length > 0 && (
-              <>
-                <div className="row gap-2" style={{ fontSize: 10.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
-                  <span className="pill mono">{activeCount} active</span>
-                  <span className="pill mono">{skippedCount} skipped</span>
-                  <span className="pill mono" style={failedCount > 0 ? { color: 'var(--danger)', borderColor: 'rgba(226,106,106,0.45)', background: 'rgba(226,106,106,0.1)' } : undefined}>
-                    {failedCount} failed
-                  </span>
-                </div>
-                <div className="col" style={{ gap: 4, maxHeight: 96, overflow: 'auto' }}>
-                  {queueForSession.slice(-4).reverse().map(item => (
-                    <div key={item.id} className="status-item">
-                      <span className="ico">
-                        {item.status === 'complete' && <CheckIcon size={12} strokeWidth={2.4} style={{ color: 'var(--ok)' }} />}
-                        {(item.status === 'importing' || item.status === 'stabilizing') && <div className="spin" />}
-                        {(item.status === 'failed' || item.status === 'skipped') && <AlertTriangle size={12} style={{ color: item.status === 'failed' ? 'var(--danger)' : 'var(--warn)' }} />}
-                        {item.status === 'queued' && <Upload size={12} style={{ color: 'var(--ink-4)' }} />}
-                      </span>
-                      <span className="mono" style={{ color: 'var(--ink-2)', width: 58, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.status}
-                      </span>
-                      <span style={{
-                        color: item.status === 'failed' ? 'var(--danger)' : item.status === 'skipped' ? 'var(--warn)' : 'var(--ink-3)',
-                        fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {item.error ?? item.filename}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <button className="btn ghost block" onClick={clearImportQueue}>
-                  Clear import queue
-                </button>
-              </>
-            )}
           </div>
         </div>
 
