@@ -1,16 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
-import { Seg } from '../../components/Seg';
 import { useApp } from '../../context/AppContext';
-import type { FilterKey, Photo } from '../../data/models';
+import type { Photo } from '../../data/models';
 
 export function GalleryCenter() {
   const {
     sessions, allPhotos, selectedSessionId, selectedPhotoId, selectedPhotoIds, selectedHour,
     selectedLocationId, locations, hours, operatingDate,
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
-    deleteSessionFromGallery, setTab, filter, setFilter,
+    deleteSessionFromGallery, setTab,
   } = useApp();
   const [search, setSearch] = useState('');
 
@@ -50,12 +49,7 @@ export function GalleryCenter() {
     const matchLocation = !selectedLocationId || s.captureLocationId === selectedLocationId;
     const matchHour = !sessionIdsInSelectedHour || sessionIdsInSelectedHour.has(s.id);
     const matchSearch = s.sessionCode.toLowerCase().includes(search.toLowerCase());
-    const matchFilter =
-      filter === 'All'       ? true :
-      filter === 'Flagged'   ? s.status === 'flagged' :
-      filter === 'Processed' ? s.status === 'complete' :
-      filter === 'Pending'   ? s.status === 'active' : true;
-    return matchLocation && matchHour && matchSearch && matchFilter;
+    return matchLocation && matchHour && matchSearch;
   });
 
   return (
@@ -82,12 +76,6 @@ export function GalleryCenter() {
           <Search size={12} style={{ color: 'var(--ink-4)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search session ID..." />
         </div>
-        <Seg
-          value={filter}
-          onChange={v => setFilter(v as FilterKey)}
-          options={['All', 'Flagged', 'Processed', 'Pending']}
-          style={{ minWidth: 200 }}
-        />
         <button className="icon-btn"><ArrowUpDown size={13} /></button>
         <button className="icon-btn"><RefreshCw size={13} /></button>
         <button
@@ -189,6 +177,8 @@ export function GalleryCenter() {
                     <img
                       src={photo.thumbnailUrl}
                       alt={photo.filename}
+                      loading="lazy"
+                      decoding="async"
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />

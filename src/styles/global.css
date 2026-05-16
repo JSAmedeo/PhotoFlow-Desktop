@@ -119,6 +119,7 @@ html, body, #root {
   min-height: 0;
 }
 .body.stream-body { grid-template-columns: 1fr; }
+.body.workshop-body { grid-template-columns: 240px 1fr 280px; }
 
 /* Panels */
 .panel { background: var(--bg); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
@@ -168,6 +169,7 @@ html, body, #root {
 /* Session thumbnail strip (center workbench) */
 .session-thumbs {
   display: flex; gap: 8px; padding: 10px 14px;
+  border-top: 1px solid var(--line-soft);
   border-bottom: 1px solid var(--line); background: var(--bg-1); align-items: center;
 }
 .session-thumb {

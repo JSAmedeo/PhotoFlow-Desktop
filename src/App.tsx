@@ -1,14 +1,12 @@
 import { useState, useEffect, memo } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TopBar } from './components/TopBar';
-import { StatusBar } from './components/StatusBar';
 import { TabBar } from './components/TabBar';
 import { LeftPanel } from './components/LeftPanel';
 import { GalleryCenter } from './features/gallery/GalleryCenter';
 import { GalleryRight } from './features/gallery/GalleryRight';
 import { ImageStreamsCenter } from './features/streams/ImageStreamsCenter';
 import { CenterPanel } from './features/workshop/CenterPanel';
-import { RightPanel } from './features/workshop/RightPanel';
 
 const PlaceholderTab = memo(function PlaceholderTab({ label }: { label: string }) {
   return (
@@ -65,12 +63,13 @@ function Shell() {
         </div>
         <div style={{ display: activeTab === 'workshop' ? 'contents' : 'none' }}>
           <CenterPanel
+            visible={activeTab === 'workshop'}
             activePhoto={activePhoto} setActivePhoto={setActivePhoto}
             split={split}             setSplit={setSplit}
             zoom={zoom}               setZoom={setZoom}
             activeTool={activeTool}   setActiveTool={setActiveTool}
           />
-          <RightPanel />
+          <div className="panel right" />
         </div>
         {(activeTab === 'print' || activeTab === 'config') && (
           <PlaceholderTab label={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />
@@ -84,11 +83,10 @@ function Shell() {
       <div style={{ width: 1440, height: 900, transform: `scale(${scale})`, transformOrigin: 'center center', flex: '0 0 auto' }}>
         <div className="app">
           <TopBar />
-          <div className={`body ${activeTab === 'streams' ? 'stream-body' : ''}`}>
+          <div className={`body ${activeTab === 'streams' ? 'stream-body' : activeTab === 'workshop' ? 'workshop-body' : ''}`}>
             {renderBody()}
           </div>
           <TabBar />
-          <StatusBar />
         </div>
       </div>
     </div>

@@ -167,14 +167,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
   });
-  // hours is derived from allPhotos + operatingDate — no separate fetch needed when date changes
-  const hours = useMemo(() => buildHourlyImportBuckets(allPhotos, operatingDate), [allPhotos, operatingDate]);
   const [selectedSessionId, setSession]           = useState<string>('');
   const [selectedPhotoId,   setPhoto]             = useState<string>('');
   const [selectedPhotoIds,  setSelectedPhotoIds]  = useState<string[]>([]);
   const [activeTab,         setTabState]          = useState<TabKey>('gallery');
   const [selectedHour,      setHourState]         = useState<string>('14:00');
   const [selectedLocationId, setLocationIdState]  = useState<string>('');
+  // hours is derived from allPhotos + operatingDate + selected location — no separate fetch needed when filters change
+  const hours = useMemo(() => {
+    if (!selectedLocationId) return buildHourlyImportBuckets(allPhotos, operatingDate);
+
+    const visibleSessionIds = new Set(
+      sessions
+        .filter(session => session.captureLocationId === selectedLocationId)
+        .map(session => session.id),
+    );
+    const visiblePhotos = allPhotos.filter(photo => visibleSessionIds.has(photo.sessionId));
+    return buildHourlyImportBuckets(visiblePhotos, operatingDate);
+  }, [allPhotos, operatingDate, selectedLocationId, sessions]);
   const [filter,            setFilterState]       = useState<FilterKey>('All');
   const [watchedFolderSettings, setWatchedFolderSettingsState] = useState<WatchedFolderSettings>(DEFAULT_WATCHED_FOLDER_SETTINGS);
   const [watcherRuntime, setWatcherRuntime] = useState<WatcherRuntimeState>({
@@ -337,9 +347,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setHour = useCallback((h: string) => {
+    if (selectedHour === h) return;
     setHourState(h);
     void setSelectedHour(h);
-  }, []);
+  }, [selectedHour]);
 
   const setLocationId = useCallback((id: string) => {
     setLocationIdState(id);

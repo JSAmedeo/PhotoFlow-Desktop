@@ -1,4 +1,4 @@
-import { Search, Bell, Sun, ChevronRight } from 'lucide-react';
+import { Search, Bell, Sun } from 'lucide-react';
 
 export function TopBar() {
   return (
@@ -18,22 +18,10 @@ export function TopBar() {
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em' }}>
             PHOTOFLOW <span style={{ color: 'var(--ink-4)', fontWeight: 500 }}>DESKTOP</span>
           </div>
-          <div className="mono" style={{ fontSize: 9.5, color: 'var(--ink-4)', letterSpacing: '0.05em' }}>
-            v0.1.0 · Phase 3 Ingest
-          </div>
         </div>
       </div>
 
       <div className="grow" />
-
-      <div className="row gap-2 mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>
-        <span style={{ color: 'var(--ink-4)' }}>WORKSPACE</span>
-        <span style={{ color: 'var(--ink-2)' }}>Operations</span>
-        <ChevronRight size={11} strokeWidth={2} style={{ color: 'var(--ink-5)' }} />
-        <span style={{ color: 'var(--ink-2)' }}>Session Workshop</span>
-        <ChevronRight size={11} strokeWidth={2} style={{ color: 'var(--ink-5)' }} />
-        <span style={{ color: 'var(--accent)' }}>Giraffes · Encounter</span>
-      </div>
 
       <div className="grow" />
 
