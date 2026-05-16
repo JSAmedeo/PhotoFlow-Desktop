@@ -29,7 +29,7 @@ The correct framing is:
 | 5 | Local Database Foundation | **COMPLETE** |
 | 6 | Watched Folder Ingest | **COMPLETE** |
 | 7 | Filename-Based Session Routing | **COMPLETE** |
-| 8 | Image Streams Foundation | **CURRENT** |
+| 8 | Image Streams Foundation | **COMPLETE** |
 
 ## Phase 1 — Visual MVP Shell (COMPLETE)
 
@@ -218,6 +218,12 @@ C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filen
 - Source folder cleanup/archive movement
 - Cloud sync
 
+## Browser Mode Status
+
+Browser mode (`npm run dev`) is retained for fast UI iteration but is **not a production target**. All real import, watcher, and data-at-scale work runs in Tauri desktop mode only. Do not add new features that require browser mode to work, and do not block Tauri-mode work on browser-mode compatibility.
+
+Root cause: browser mode stored full-resolution images as base64 data URLs inside `localStorage` photo records. At 50+ real photos this JSON blob becomes tens of MB, parsed on every data read. This model cannot scale. Tauri mode stores photos as files on disk and metadata in SQLite — photo records are lightweight and image URLs are cheap `convertFileSrc()` pointers.
+
 ## Post-Phase 8 — Loose End Fixes (COMPLETE)
 
 A series of targeted fixes applied after Phase 8, before Phase 9 was scoped.
@@ -259,6 +265,27 @@ A series of targeted fixes applied after Phase 8, before Phase 9 was scoped.
 - Local Ingest section removed (Import Photos button, watched folder controls, queue status)
 - `importPhotosToActiveSession` remains in context for future use; nothing calls it from this panel
 - Processing Queue demo section remains
+
+## Performance Patterns Established (Post-Phase 8)
+
+Responsiveness degraded noticeably after importing 50 real photos. The root causes were identified and fixed before Phase 9. These patterns are now rules — do not regress them.
+
+**Data loading — only reload what changed:**
+- `refreshData` (5-collection full reload) is now called only when data genuinely changes: after an import, after a delete, or after a watcher callback. It is never called on session selection, tab switching, or photo selection.
+- `selectSession` fetches only the newly selected session's photos via `getPhotosBySessionId` + `resolvePhotoSources`. Sessions, locations, streams, and import queue are already in memory and are not reloaded.
+- `toggleFavorite` and `toggleFlag` use optimistic in-place updates on `allPhotos`/`photos` state. They find the target photo in existing state (not from storage), update it locally, then persist asynchronously. No full reload.
+
+**Photo URL resolution:**
+- `resolvePhotoSources` short-circuits when no photos have `storageKind: 'tauri-managed-file'`. The full `Promise.all` map is skipped, returning the array directly.
+
+**Render loop efficiency:**
+- `GalleryCenter` and `HourFilmstrip` both precompute a `Map<sessionId, Photo[]>` via `useMemo` (indexed once per `allPhotos` change). The render loop uses O(1) map lookups instead of O(sessions × photos) filters.
+- `SessionPhotoMini` in the Workshop photo strip is wrapped in `React.memo`. Only the 1–2 thumbnails whose props changed re-render when selection changes, not all 50.
+- The `useEffect` that attaches mouse listeners for the compare-view drag handle uses `useCallback` on `updateSplit` and lists it as a dependency, so listeners attach once per mount instead of every render.
+
+**Tab persistence:**
+- Gallery and Workshop panels stay mounted across Gallery↔Workshop tab switches. CSS `display: contents` makes the active panel's children participate in the flex layout; `display: none` removes the inactive panel from layout without unmounting it. This keeps the browser's image decode cache warm — switching back to a tab is instant after the first load.
+- The Streams tab remains conditionally mounted (it runs a 2-second polling loop that should not run in the background).
 
 ## Future — Operator Correction Tools
 

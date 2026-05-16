@@ -38,11 +38,13 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 - **Runtime:** React 18 + TypeScript + Vite 6
 - **Icons:** lucide-react
 - **Styling:** Custom CSS design system via `src/styles/global.css` using CSS custom properties — **no Tailwind**
-- **Desktop shell:** Tauri v2 foundation added in Phase 4
-- **Local data:** browser mode uses localStorage; Tauri desktop mode uses SQLite metadata via the Tauri SQL plugin
-- **Dev server:** `npm run dev` → localhost (port varies if 5173 is in use)
+- **Desktop shell:** Tauri v2 — this is the **only production target**
+- **Local data:** SQLite metadata via the Tauri SQL plugin; imported image files stored on disk under `C:\PhotoFlow Desktop`
+- **Dev server:** `npm run dev` → localhost (browser mode, for UI iteration only — not for data or import features)
 - **Typecheck:** `npm run typecheck` (`tsc --noEmit`)
 - **Lint:** `npm run lint`
+
+**Browser mode status:** Browser mode (`npm run dev`) exists for fast UI iteration only. It is **not a production target** and not required to support real photo import, watched-folder ingest, or large datasets. Do not add new features that only work in browser mode, and do not block Tauri-mode work on browser-mode compatibility. The localStorage data layer is retained as a compile-time fallback but is explicitly not scaled or maintained for production use.
 
 ## Phase Status and Current Focus
 
@@ -278,6 +280,33 @@ C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filen
 - Failed data operations must surface as errors, not silent no-ops.
 - Seed data must always produce a working demo state.
 
+## Performance Rules
+
+This app is intended for production use in high-volume photo venues. Responsiveness is a hard requirement, not a polish item. Apply these rules whenever touching data flow or rendering.
+
+**State and data loading:**
+- `refreshData` (full 5-collection reload) must only run when data has genuinely changed: after an import, after a delete, or after a watcher callback. Never call it on a user interaction that doesn't write data (session click, tab switch, photo selection).
+- `selectSession` must fetch only the selected session's photos via `getPhotosBySessionId` — not trigger a full reload.
+- Single-field metadata changes (`toggleFavorite`, `toggleFlag`) must use optimistic in-place state updates on the existing `allPhotos`/`photos` arrays. Do not read from storage or call `refreshData` for these.
+- Do not fetch all photos to find one photo. Use the `allPhotos` state already in memory.
+
+**Photo URL resolution:**
+- `resolvePhotoSources` must short-circuit for non-Tauri photos. If no photos have `storageKind: 'tauri-managed-file'`, return the array as-is without mapping.
+
+**Component rendering:**
+- Components that render lists of photos must precompute a `Map<sessionId, Photo[]>` via `useMemo` — never filter `allPhotos` inside a render loop.
+- Strip/filmstrip thumbnail components with many items (`SessionPhotoMini` etc.) must be wrapped in `React.memo` so only the items whose props changed re-render.
+- `useEffect` hooks that attach global event listeners must have a proper dependency array. Missing deps = listeners added and removed on every render.
+
+**Tab persistence:**
+- Gallery and Workshop panels must stay mounted across Gallery↔Workshop tab switches using CSS `display: contents` / `display: none`. This preserves the browser's image decode cache so switching back is instant. Do not revert to conditional rendering for these two tabs.
+- The Streams tab may remain conditionally mounted because it runs a background polling loop.
+
+**What not to do:**
+- Do not trigger any storage read or context refresh in response to a click that only changes selection.
+- Do not store full-resolution image data in React state that gets spread or copied on every render.
+- Do not pass large arrays as props to memoized components if the reference changes every render.
+
 ## Always-Deferred Items
 
 Do not build these unless explicitly scoped into a phase:
@@ -289,8 +318,8 @@ Do not build these unless explicitly scoped into a phase:
 - Multi-tenant SaaS features
 - Advanced analytics
 - AI processing pipeline
-- LocalStorage-to-SQLite migration
 - Additional stream types beyond local-folder watching
+- Browser mode feature work — browser mode exists for UI iteration only; do not add import, watcher, or data features that only work in browser mode
 
 ## Communication Style
 

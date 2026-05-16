@@ -2,7 +2,7 @@
 
 Local-first desktop application for operational photo workflows at high-volume souvenir photography venues.
 
-## Current Stage: Phase 8 — Image Streams Foundation
+## Current Stage: Phase 9 — TBD (Phase 8 complete)
 
 The app now supports two runtime modes:
 
@@ -47,14 +47,7 @@ local-folder
 
 Future stream types such as API, cloud, or mobile upload streams are placeholders only and are not implemented yet.
 
-In Tauri desktop mode, Session Workshop now includes a compact **Watched Folder** control in the **Local Ingest** panel.
-
-Use it to:
-
-- choose an intake folder
-- enable or disable watching
-- see watcher status
-- see the last detected file and last import result
+Watched-folder configuration is managed from the **Image Streams** page. Each local-folder stream has its own watch path, enable/disable toggle, and live folder view. The Session Workshop right panel no longer has a Local Ingest section.
 
 Supported watched-folder file types:
 
@@ -147,8 +140,12 @@ Hourly folders in the left panel are based on current-day import time, not photo
 Watched-folder imports use the organized managed path:
 
 ```txt
-C:\PhotoFlow Desktop\photos\imported\YYYY\MM\DD\{captureLocationSlug}\{sessionKey}\originals\{photoId}_{safeOriginalFilename}
+C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filename}
 ```
+
+- `streamName` = sanitized stream name, or `captureLocationSlug`, or `manual-import` fallback
+- `mm_yyyy` = zero-padded month + underscore + 4-digit year (e.g. `05_2026`)
+- `dd` / `hh` = zero-padded day and hour of import
 
 This root-level folder is intentional. It gives support staff a predictable location for checking imported originals, backup behavior, and troubleshooting storage issues. Previous app-local imports are intentionally disregarded for the fresh storage start.
 
@@ -187,11 +184,11 @@ The previous Fresh desktop reset control was removed in Phase 7 after session/ph
 
 | Feature | Planned phase |
 |---------|--------------|
-| Folder watcher / tethered ingest | Future |
-| Move/merge/relink sessions | Future |
-| Operator audit history | Future |
+| Move/merge/relink sessions | Phase 9+ |
+| Operator audit history | Phase 9+ |
+| Full processing queue / AI processing | Phase 9+ |
 | LocalStorage-to-SQLite migration | Future |
-| Cloud sync | Phase 6 |
+| Cloud sync | Future |
 
 ## Project structure
 
@@ -236,7 +233,10 @@ archive/               ← ignored original handoff zip/archive files
 | 3 | Basic photo ingest | Complete |
 | 4 | Desktop runtime foundation | Complete |
 | 5 | Local database foundation | Complete |
-| 6 | Watched folder ingest | **Current** |
+| 6 | Watched folder ingest | Complete |
+| 7 | Filename-based session routing | Complete |
+| 8 | Image streams foundation | Complete |
+| 9 | TBD | **Next** |
 
 ## Phase checklist rule
 
