@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TopBar } from './components/TopBar';
 import { StatusBar } from './components/StatusBar';
@@ -10,14 +10,14 @@ import { ImageStreamsCenter } from './features/streams/ImageStreamsCenter';
 import { CenterPanel } from './features/workshop/CenterPanel';
 import { RightPanel } from './features/workshop/RightPanel';
 
-function PlaceholderTab({ label }: { label: string }) {
+const PlaceholderTab = memo(function PlaceholderTab({ label }: { label: string }) {
   return (
     <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: 'var(--ink-4)', gap: 12 }}>
       <span className="mono" style={{ fontSize: 11 }}>{label}</span>
       <span style={{ fontSize: 11, color: 'var(--ink-5)' }}>— coming in Phase 3+</span>
     </div>
   );
-}
+});
 
 // Inner shell — has access to AppContext
 function Shell() {
@@ -49,24 +49,34 @@ function Shell() {
     );
   }
 
-  const renderCenter = () => {
-    if (activeTab === 'gallery')  return <GalleryCenter />;
-    if (activeTab === 'streams') return <ImageStreamsCenter />;
-    if (activeTab === 'workshop') return (
-      <CenterPanel
-        activePhoto={activePhoto} setActivePhoto={setActivePhoto}
-        split={split}             setSplit={setSplit}
-        zoom={zoom}               setZoom={setZoom}
-        activeTool={activeTool}   setActiveTool={setActiveTool}
-      />
+  // Gallery and Workshop stay mounted across switches so the browser's image decode
+  // cache stays warm — switching back is instant after the first load.
+  // ImageStreams is conditional because it has a 2-second polling loop.
+  const renderBody = () => {
+    if (activeTab === 'streams') {
+      return <ImageStreamsCenter />;
+    }
+    return (
+      <>
+        <LeftPanel />
+        <div style={{ display: activeTab === 'gallery' ? 'contents' : 'none' }}>
+          <GalleryCenter />
+          <GalleryRight />
+        </div>
+        <div style={{ display: activeTab === 'workshop' ? 'contents' : 'none' }}>
+          <CenterPanel
+            activePhoto={activePhoto} setActivePhoto={setActivePhoto}
+            split={split}             setSplit={setSplit}
+            zoom={zoom}               setZoom={setZoom}
+            activeTool={activeTool}   setActiveTool={setActiveTool}
+          />
+          <RightPanel />
+        </div>
+        {(activeTab === 'print' || activeTab === 'config') && (
+          <PlaceholderTab label={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />
+        )}
+      </>
     );
-    return <PlaceholderTab label={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />;
-  };
-
-  const renderRight = () => {
-    if (activeTab === 'gallery')  return <GalleryRight />;
-    if (activeTab === 'workshop') return <RightPanel />;
-    return null;
   };
 
   return (
@@ -75,15 +85,7 @@ function Shell() {
         <div className="app">
           <TopBar />
           <div className={`body ${activeTab === 'streams' ? 'stream-body' : ''}`}>
-            {activeTab === 'streams' ? (
-              <ImageStreamsCenter />
-            ) : (
-              <>
-                <LeftPanel />
-                {renderCenter()}
-                {renderRight()}
-              </>
-            )}
+            {renderBody()}
           </div>
           <TabBar />
           <StatusBar />

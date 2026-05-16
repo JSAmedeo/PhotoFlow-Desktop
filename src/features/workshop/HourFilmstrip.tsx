@@ -2,9 +2,22 @@ import { useMemo } from 'react';
 import { Filter, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
+import type { Photo } from '../../data/models';
 
 export function HourFilmstrip() {
   const { sessions, allPhotos, selectedSessionId, selectSession, selectedHour, selectedLocationId, hours, operatingDate } = useApp();
+
+  // Index allPhotos by sessionId once per allPhotos change — avoids O(sessions × photos) filter in the render loop.
+  const photosBySession = useMemo(() => {
+    const map = new Map<string, Photo[]>();
+    for (const photo of allPhotos) {
+      if (photo.isHidden) continue;
+      const list = map.get(photo.sessionId);
+      if (list) list.push(photo);
+      else map.set(photo.sessionId, [photo]);
+    }
+    return map;
+  }, [allPhotos]);
 
   const sessionIdsInSelectedHour = useMemo(() => {
     if (hours.length === 0) return null;
@@ -54,7 +67,7 @@ export function HourFilmstrip() {
 
       <div style={{ display: 'flex', overflowX: 'auto', padding: '10px 14px', gap: 0, alignItems: 'stretch' }}>
         {filtered.map((s, si) => {
-          const sessionPhotos = allPhotos.filter(p => p.sessionId === s.id && !p.isHidden);
+          const sessionPhotos = photosBySession.get(s.id) ?? [];
           const previewPhotos = sessionPhotos.slice(0, 2);
           const remaining = sessionPhotos.length - previewPhotos.length;
           return (

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Star, Flag, Info, Maximize2, Plus, ChevronLeft, ChevronRight, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn, Undo2, Redo2, Crop, Upload, Eye, Check, Trash2 } from 'lucide-react';
 import { HourFilmstrip } from './HourFilmstrip';
 import { useApp } from '../../context/AppContext';
@@ -14,7 +14,7 @@ interface CenterPanelProps {
   setActiveTool:  (t: string) => void;
 }
 
-function SessionPhotoMini({
+const SessionPhotoMini = memo(function SessionPhotoMini({
   idx, active, selected, status, src, filename,
 }: { idx: number; active: boolean; selected: boolean; status: string; src: string; filename: string }) {
   return (
@@ -41,7 +41,7 @@ function SessionPhotoMini({
       {status === 'warn'       && <div className="st-warn" />}
     </div>
   );
-}
+});
 
 export function CenterPanel({
   activePhoto, setActivePhoto, split, setSplit, zoom, setZoom, activeTool, setActiveTool,
@@ -59,11 +59,11 @@ export function CenterPanel({
   const draggingRef = useRef(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
-  const updateSplit = (e: MouseEvent) => {
+  const updateSplit = useCallback((e: MouseEvent) => {
     if (!wrapRef.current) return;
     const r = wrapRef.current.getBoundingClientRect();
     setSplit(Math.max(2, Math.min(98, ((e.clientX - r.left) / r.width) * 100)));
-  };
+  }, [setSplit]); // setSplit is a useState setter — stable across renders
 
   useEffect(() => {
     const m = (e: MouseEvent) => { if (draggingRef.current) updateSplit(e); };
@@ -71,7 +71,7 @@ export function CenterPanel({
     window.addEventListener('mousemove', m);
     window.addEventListener('mouseup', u);
     return () => { window.removeEventListener('mousemove', m); window.removeEventListener('mouseup', u); };
-  });
+  }, [updateSplit]); // updateSplit is stable via useCallback — attaches once
 
   useEffect(() => {
     if (selectedIndex >= 0 && activePhoto !== selectedIndex + 1) {

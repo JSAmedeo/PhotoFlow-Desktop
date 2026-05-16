@@ -3,7 +3,7 @@ import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from
 import { Tile } from '../../components/Tile';
 import { Seg } from '../../components/Seg';
 import { useApp } from '../../context/AppContext';
-import type { FilterKey } from '../../data/models';
+import type { FilterKey, Photo } from '../../data/models';
 
 export function GalleryCenter() {
   const {
@@ -16,6 +16,18 @@ export function GalleryCenter() {
 
   const totalImages = sessions.reduce((sum, s) => sum + s.photoCount, 0);
   const activeLocation = selectedLocationId ? locations.find(l => l.id === selectedLocationId) : undefined;
+
+  // Index allPhotos by sessionId once per allPhotos change — avoids O(sessions × photos) filter in the render loop.
+  const photosBySession = useMemo(() => {
+    const map = new Map<string, Photo[]>();
+    for (const photo of allPhotos) {
+      if (photo.isHidden) continue;
+      const list = map.get(photo.sessionId);
+      if (list) list.push(photo);
+      else map.set(photo.sessionId, [photo]);
+    }
+    return map;
+  }, [allPhotos]);
 
   // Build the set of session IDs that have photos imported in the selected hour today.
   // When hours.length === 0 (no import activity yet — seed/demo mode), hour filtering is skipped.
@@ -155,7 +167,7 @@ export function GalleryCenter() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {allPhotos.filter(p => p.sessionId === s.id && !p.isHidden).map((photo, i) => (
+              {(photosBySession.get(s.id) ?? []).map((photo, i) => (
                 <div
                   key={photo.id}
                   onClick={e => {

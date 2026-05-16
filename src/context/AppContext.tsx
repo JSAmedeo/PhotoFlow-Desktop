@@ -284,17 +284,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       setSession(id);
       await setSelectedSessionId(id);
-      const sessionPhotos = await getPhotosBySessionId(id);
+      // Only load the new session's photos — sessions/locations/streams/queue are unchanged.
+      const raw = await getPhotosBySessionId(id);
+      const resolved = await resolvePhotoSources(raw);
       const preferredPhoto = preferredPhotoId
-        ? sessionPhotos.find(photo => photo.id === preferredPhotoId)
+        ? resolved.find(photo => photo.id === preferredPhotoId)
         : undefined;
-      const photoId = preferredPhoto?.id ?? sessionPhotos[0]?.id ?? '';
+      const photoId = preferredPhoto?.id ?? resolved[0]?.id ?? '';
       setPhoto(photoId);
       setSelectedPhotoIds(photoId ? [photoId] : []);
       await setSelectedPhotoId(photoId);
-      await refreshData(id);
+      setPhotos(resolved);
     })();
-  }, [refreshData]);
+  }, []);
 
   const selectPhoto = useCallback((id: string) => {
     setPhoto(id);
@@ -355,22 +357,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toggleFavorite = useCallback((photoId: string) => {
     void (async () => {
-      const target = (await getPhotos()).find(photo => photo.id === photoId);
+      const target = allPhotos.find(photo => photo.id === photoId);
       if (!target) return;
+      const next = { ...target, isFavorite: !target.isFavorite };
+      // Optimistic in-place update — no full reload needed for a single metadata field change.
+      setAllPhotos(current => current.map(p => p.id === photoId ? next : p));
+      setPhotos(current => current.map(p => p.id === photoId ? next : p));
       await repoUpdatePhoto(photoId, { isFavorite: !target.isFavorite });
-      await refreshData(selectedSessionId);
     })();
-  }, [refreshData, selectedSessionId]);
+  }, [allPhotos]);
 
   const toggleFlag = useCallback((photoId: string) => {
     void (async () => {
-      const target = (await getPhotos()).find(photo => photo.id === photoId);
+      const target = allPhotos.find(photo => photo.id === photoId);
       if (!target) return;
       const nextFlag: Photo['flag'] = target.flag === 'flagged' ? 'none' : 'flagged';
+      const next = { ...target, flag: nextFlag };
+      // Optimistic in-place update — no full reload needed for a single metadata field change.
+      setAllPhotos(current => current.map(p => p.id === photoId ? next : p));
+      setPhotos(current => current.map(p => p.id === photoId ? next : p));
       await repoUpdatePhoto(photoId, { flag: nextFlag });
-      await refreshData(selectedSessionId);
     })();
-  }, [refreshData, selectedSessionId]);
+  }, [allPhotos]);
 
   const importPhotosToActiveSession = useCallback(async (files: File[]) => {
     if (!selectedSessionId || files.length === 0) return;
