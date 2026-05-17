@@ -1,8 +1,16 @@
-import { join } from '@tauri-apps/api/path';
-import { readDir, watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
+import type { UnwatchFn } from '@tauri-apps/plugin-fs';
 import { isTauriRuntime } from '../runtime/runtime';
-import { autoImportWatchedFile, isSupportedWatchedImage } from './autoImportPipeline';
+import { autoImportWatchedFile } from './autoImportPipeline';
 import type { StartImageStreamWatchersOptions, StartWatcherOptions, WatchedFileCandidate } from './watchedFolderTypes';
+
+// OS-generated files that should never surface in the import queue.
+const SYSTEM_JUNK_FILENAMES = new Set([
+  'thumbs.db', 'desktop.ini', 'picasa.ini', '.ds_store', '.localized',
+]);
+function isSystemJunkFile(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return SYSTEM_JUNK_FILENAMES.has(lower) || lower.startsWith('.') || lower.startsWith('~');
+}
 
 let unwatchCurrent: UnwatchFn | null = null;
 const streamUnwatchers = new Map<string, UnwatchFn>();
@@ -60,8 +68,14 @@ async function processCandidate(candidate: WatchedFileCandidate, options: StartW
       options.settings.fileSettleDelayMs,
       options.imageStream,
     );
-    recentlyHandled.add(candidate.path);
-    window.setTimeout(() => recentlyHandled.delete(candidate.path), 10_000);
+    // Only guard against re-processing when the file was NOT successfully removed
+    // (failed/skipped imports leave the file in the folder). Complete imports remove
+    // the file, so there is nothing to block — a new file dropped at the same path
+    // should be picked up immediately.
+    if (result !== 'complete') {
+      recentlyHandled.add(candidate.path);
+      window.setTimeout(() => recentlyHandled.delete(candidate.path), 10_000);
+    }
     options.onStatus({
       status: options.settings.watchEnabled ? 'watching' : 'off',
       lastDetected: candidate.filename,
@@ -94,11 +108,16 @@ async function processCandidate(candidate: WatchedFileCandidate, options: StartW
   }
 }
 
+// Dynamic imports are used here (rather than top-level) so the browser bundle
+// never attempts to resolve @tauri-apps modules. This function is only reached
+// after the isTauriRuntime() guard in its callers.
 async function scanExistingFiles(folderPath: string, options: StartWatcherOptions): Promise<void> {
   try {
+    const { readDir } = await import('@tauri-apps/plugin-fs');
+    const { join } = await import('@tauri-apps/api/path');
     const entries = await readDir(folderPath);
     for (const entry of entries) {
-      if (!entry.isFile || !isSupportedWatchedImage(entry.name)) continue;
+      if (!entry.isFile || isSystemJunkFile(entry.name)) continue;
       const path = await join(folderPath, entry.name);
       await processCandidate({
         path,
@@ -134,13 +153,15 @@ export async function startWatchedFolder(options: StartWatcherOptions): Promise<
     return;
   }
 
+  const { watch } = await import('@tauri-apps/plugin-fs');
+
   try {
     unwatchCurrent = await watch(
       options.settings.watchedImportFolder,
       event => {
         for (const path of event.paths) {
           const filename = filenameFromPath(path);
-          if (!isSupportedWatchedImage(filename)) continue;
+          if (isSystemJunkFile(filename)) continue;
           void processCandidate({
             path,
             filename,
@@ -181,6 +202,8 @@ export async function startImageStreamWatchers(options: StartImageStreamWatchers
     return;
   }
 
+  const { watch } = await import('@tauri-apps/plugin-fs');
+
   let started = 0;
   for (const stream of activeStreams) {
     if (!stream.watchPath) {
@@ -209,7 +232,7 @@ export async function startImageStreamWatchers(options: StartImageStreamWatchers
         event => {
           for (const path of event.paths) {
             const filename = filenameFromPath(path);
-            if (!isSupportedWatchedImage(filename)) continue;
+            if (isSystemJunkFile(filename)) continue;
             void processCandidate({
               path,
               filename,

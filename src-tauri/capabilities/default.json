@@ -15,7 +15,13 @@
     "fs:allow-unwatch",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        { "path": "**" },
+        { "path": "C:\\PhotoFlow Desktop\\**" },
+        { "path": "C:\\PhotoFlow Desktop" },
+        { "path": "$APPLOCALDATA/PhotoFlow Desktop/**" },
+        { "path": "$APPLOCALDATA/PhotoFlow Desktop" }
+      ]
     },
     "fs:allow-applocaldata-read-recursive",
     "fs:allow-applocaldata-write-recursive",

@@ -114,9 +114,9 @@ The following survives page refresh:
 
 Not persisted (resets on refresh): zoom level, active tool, before/after split position.
 
-## Local import workflow
+## Import workflow
 
-Open the **Session Workshop** tab, then use **Local Ingest → Import Photos** in the right panel. The picker accepts multiple `image/*` files.
+Current production import work is driven by configured **Image Streams** watched folders in Tauri desktop mode. The old Session Workshop **Local Ingest** right-panel controls were removed during operational UI cleanup.
 
 When photos are imported:
 - each valid routed file becomes a `Photo` record in the parsed filename session
@@ -135,7 +135,7 @@ Phase 7 adds filename-based session routing. Filenames containing the first vali
 
 Files without a valid session ID are treated as unrouted exceptions and are skipped/marked for review instead of silently attaching to the wrong session.
 
-Hourly folders in the left panel are based on current-day import time, not photo capture metadata. The panel starts empty for a day with no imports, creates/fills hour folders as photos import, shows skipped hours between import hours as no-photo gaps, and reports both session and photo totals. Today at a glance uses the same current-day hourly folder data.
+Hourly folders in the left panel are based on current-day import time, not photo capture metadata. The panel starts empty for a day with no imports, creates/fills hour folders as photos import, filters by selected capture location unless **All Locations** is selected, and shows the session count in each folder badge. Today at a glance uses the same current-day hourly folder data, constrained to 7 AM through 10 PM with standard-time labels.
 
 Watched-folder imports use the organized managed path:
 
@@ -175,10 +175,10 @@ The previous Fresh desktop reset control was removed in Phase 7 after session/ph
 
 ## What to check visually
 
-- **Gallery tab:** Session list updates reflect real data; flag/favorite toggles persist on refresh
-- **Session Workshop tab:** Photo strip shows real photo count per session; active session header shows real metadata
-- **Left panel:** Hourly folders reflect today's import-time sessions/photos; skipped import hours show as empty
-- **Status bar:** Session code and photo count reflect the selected session
+- **Gallery tab:** Session list updates reflect real data; preview/open/delete actions operate on the selected session
+- **Session Workshop tab:** Session strip appears above the compare view, active-session thumbnails appear below the toolbar, and active-session metadata appears below the thumbnails
+- **Left panel:** Hourly folders reflect today's import-time sessions/photos, respect the selected capture location, and show session-count badges
+- **Operating date:** Chevrons navigate by day and the date control opens the calendar popover
 
 ## Intentionally not implemented yet
 
@@ -193,19 +193,21 @@ The previous Fresh desktop reset control was removed in Phase 7 after session/ph
 ## Project structure
 
 ```
-PHASE_1_PROMPT.md    ← implementation prompt/archive for Phase 1
-PHASE_2_PROMPT.md    ← implementation prompt/archive for Phase 2
-PHASE_3_PROMPT.md    ← implementation prompt/archive for Phase 3
-PHASE_4_ACCEPTANCE_CHECKLIST.md
-PHASE_4_DESKTOP_RUNTIME.md
-PHASE_5_ACCEPTANCE_CHECKLIST.md
-PHASE_5_LOCAL_DATABASE.md
-PHASE_6_ACCEPTANCE_CHECKLIST.md
-PHASE_6_WATCHED_FOLDER_INGEST.md
-PHASE_7_ACCEPTANCE_CHECKLIST.md
-PHASE_7_FILENAME_SESSION_ROUTING.md
-PHASE_8_ACCEPTANCE_CHECKLIST.md
-PHASE_8_IMAGE_STREAMS.md
+docs/
+  phases/             ← all phase prompts, plans, and acceptance checklists
+    PHASE_1_PROMPT.md
+    PHASE_2_PROMPT.md
+    PHASE_3_PROMPT.md
+    PHASE_4_ACCEPTANCE_CHECKLIST.md
+    PHASE_4_DESKTOP_RUNTIME.md
+    PHASE_5_ACCEPTANCE_CHECKLIST.md
+    PHASE_5_LOCAL_DATABASE.md
+    PHASE_6_ACCEPTANCE_CHECKLIST.md
+    PHASE_6_WATCHED_FOLDER_INGEST.md
+    PHASE_7_ACCEPTANCE_CHECKLIST.md
+    PHASE_7_FILENAME_SESSION_ROUTING.md
+    PHASE_8_ACCEPTANCE_CHECKLIST.md
+    PHASE_8_IMAGE_STREAMS.md
 src-tauri/            ← Tauri v2 desktop runtime shell
 src/
   components/         ← shared UI primitives
@@ -240,4 +242,4 @@ archive/               ← ignored original handoff zip/archive files
 
 ## Phase checklist rule
 
-Every development phase must include a dedicated `PHASE_X_ACCEPTANCE_CHECKLIST.md` file covering the goal, scope, tasks, validation commands, acceptance criteria, known limitations, and deferred items. No phase is complete until that checklist is reviewed and all required items are completed or explicitly deferred with a reason.
+Every development phase must include a dedicated `docs/phases/PHASE_X_ACCEPTANCE_CHECKLIST.md` file covering the goal, scope, tasks, validation commands, acceptance criteria, known limitations, and deferred items. Put all future phase prompts, implementation plans, and phase notes in `docs/phases/` using the existing `PHASE_X_*.md` naming pattern. No phase is complete until its checklist is reviewed and all required items are completed or explicitly deferred with a reason.

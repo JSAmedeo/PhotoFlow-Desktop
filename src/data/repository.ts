@@ -20,8 +20,9 @@ import type {
 import { getPhotoStorageService } from '../storage/photoStorageFactory';
 import { readImageDimensions, type SavedPhotoReference } from '../storage/photoStorage';
 import { initializeMetadataStore, getMetadataStore } from './stores/metadataStoreFactory';
-import { parsePhotoFilename, type ParsedPhotoFilename } from '../ingest/filenameParser';
+import { parsePhotoFilename } from '../ingest/filenameParser';
 import { routePhotoToSession, type SessionRoutingResult } from '../ingest/sessionRoutingService';
+import { slugify } from '../utils/slugify';
 
 function isPhoto(value: Photo | undefined): value is Photo {
   return value !== undefined;
@@ -241,35 +242,25 @@ export async function clearImportQueue(): Promise<void> {
   await (await getMetadataStore()).clearImportQueue();
 }
 
-async function isDuplicateImport(
-  sessionId: string,
-  file: File,
-  parsed?: ParsedPhotoFilename,
-  sourcePath?: string,
-  photos = getPhotos(),
-): Promise<boolean> {
-  const resolvedPhotos = await photos;
-  return resolvedPhotos.some(photo => {
-    if (photo.sessionId !== sessionId) return false;
-    if (sourcePath && photo.sourcePath === sourcePath) return true;
-    if (
-      parsed?.sessionKey &&
-      parsed.sequenceNumber != null &&
-      photo.sessionKey === parsed.sessionKey &&
-      photo.sequenceNumber === parsed.sequenceNumber &&
-      (photo.originalFilename === file.name || photo.sourceFilename === file.name)
-    ) {
-      return true;
-    }
-    if (photo.importedFile) {
-      return (
-        photo.importedFile.filename === file.name &&
-        photo.importedFile.fileSize === file.size &&
-        photo.importedFile.lastModified === file.lastModified
-      );
-    }
-    return photo.filename === file.name;
-  });
+// Returns a stored filename that does not collide with any photo already in the session.
+// If the candidate filename is already taken, appends _2, _3, … until unique.
+async function resolveUniqueFilename(sessionId: string, filename: string): Promise<string> {
+  const photos = await getPhotosBySessionId(sessionId);
+  const taken = new Set(photos.map(p => p.filename));
+  if (!taken.has(filename)) return filename;
+
+  const dot = filename.lastIndexOf('.');
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : '';
+  let n = 2;
+  while (taken.has(`${stem}_${n}${ext}`)) n += 1;
+  return `${stem}_${n}${ext}`;
+}
+
+function describeImportError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Import failed.';
 }
 
 function filenameStem(filename: string): string {
@@ -395,13 +386,6 @@ function makeImportedPhoto(
   };
 }
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'watched-folder';
-}
-
 function startOfToday(): Date {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -481,10 +465,8 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       fileSize: file.size,
       lastModified: file.lastModified,
       sourceFilename: file.name,
-      parsedSessionKey: parsed.sessionKey ?? undefined,
+      parsedSessionKey: parsed.sessionKey,
       parsedSequenceNumber: parsed.sequenceNumber,
-      routingStatus: parsed.sessionKey ? undefined : 'unrouted',
-      routingReason: parsed.sessionKey ? undefined : parsed.reason,
       createdAt: new Date().toISOString(),
     };
     await addImportQueueItem(queueItem);
@@ -518,26 +500,16 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       continue;
     }
 
-    if (await isDuplicateImport(routing.session.id, file, parsed)) {
-      await updateImportQueueItem(queueItem.id, {
-        status: 'skipped',
-        progress: 100,
-        routingStatus: 'routed',
-        routingReason: routing.reason,
-        error: 'Already imported for this session.',
-        completedAt: new Date().toISOString(),
-      });
-      continue;
-    }
-
     try {
       await updateImportQueueItem(queueItem.id, { status: 'importing', progress: 35 });
       const photoId = `imp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const importedAt = new Date().toISOString();
-      const savedPhoto = await getPhotoStorageService().saveImportedPhoto(file, {
+      const uniqueFilename = await resolveUniqueFilename(routing.session.id, file.name);
+      const importFile = fileWithName(file, uniqueFilename);
+      const savedPhoto = await getPhotoStorageService().saveImportedPhoto(importFile, {
         sessionKey: routing.session.sessionCode || routing.session.id,
         photoId,
-        originalFilename: file.name,
+        originalFilename: importFile.name,
         sourceType: 'manual-picker',
         captureLocationSlug: slugify(routing.session.captureLocationLabel || routing.session.captureLocationId),
         importedAt,
@@ -546,7 +518,7 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
       await updateImportQueueItem(queueItem.id, { progress: 65 });
       const dimensions = await readImageDimensions(savedPhoto.displayUrl);
       await updateImportQueueItem(queueItem.id, { progress: 80 });
-      const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, file, photoId, savedPhoto, dimensions, {
+      const photo = await addPhotoToSession(routing.session.id, makeImportedPhoto(routing.session, importFile, photoId, savedPhoto, dimensions, {
         sourceType: 'manual-picker',
         importedAt,
       }, routing));
@@ -562,12 +534,13 @@ export async function importPhotosToSession(sessionId: string, files: File[]): P
         completedAt: new Date().toISOString(),
       });
     } catch (error) {
+      const msg = describeImportError(error);
       await updateImportQueueItem(queueItem.id, {
         status: 'failed',
         progress: 100,
         routingStatus: 'routing_failed',
-        routingReason: error instanceof Error ? error.message : 'Import failed.',
-        error: error instanceof Error ? error.message : 'Import failed.',
+        routingReason: msg,
+        error: msg,
         completedAt: new Date().toISOString(),
       });
     }
@@ -607,7 +580,7 @@ export async function importWatchedPhotoToSession(
     imageStreamId: imageStream?.id ?? null,
     imageStreamName: imageStream?.name ?? null,
     streamType: imageStream?.type,
-    parsedSessionKey: parsed.sessionKey ?? undefined,
+    parsedSessionKey: parsed.sessionKey,
     parsedSequenceNumber: parsed.sequenceNumber,
     routingStatus: routing.status === 'routed' ? 'routed' : 'unrouted',
     routingReason: routing.reason,
@@ -629,23 +602,12 @@ export async function importWatchedPhotoToSession(
     return undefined;
   }
 
-  if (await isDuplicateImport(routing.session.id, file, parsed, sourcePath)) {
-    await updateImportQueueItem(queueItem.id, {
-      status: 'skipped',
-      progress: 100,
-      routingStatus: 'routed',
-      routingReason: routing.reason,
-      error: 'Already imported for this session.',
-      completedAt: new Date().toISOString(),
-    });
-    return undefined;
-  }
-
   try {
     await updateImportQueueItem(queueItem.id, { status: 'importing', progress: 35 });
     const photoId = `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const importedAt = new Date().toISOString();
-    const importFilename = buildStreamFilename(file, routing, imageStream);
+    const baseFilename = buildStreamFilename(file, routing, imageStream);
+    const importFilename = await resolveUniqueFilename(routing.session.id, baseFilename);
     const importFile = fileWithName(file, importFilename);
     const savedPhoto = await getPhotoStorageService().saveImportedPhoto(importFile, {
       sessionKey: routing.session.sessionCode || routing.session.id,
@@ -680,15 +642,18 @@ export async function importWatchedPhotoToSession(
     });
     return photo;
   } catch (error) {
+    const msg = describeImportError(error);
     await updateImportQueueItem(queueItem.id, {
       status: 'failed',
       progress: 100,
       routingStatus: 'routing_failed',
-      routingReason: error instanceof Error ? error.message : 'Watched-folder import failed.',
-      error: error instanceof Error ? error.message : 'Watched-folder import failed.',
+      routingReason: msg,
+      error: msg,
       completedAt: new Date().toISOString(),
     });
-    return undefined;
+    // Rethrow so autoImportPipeline's outer catch calls recordImageStreamActivity('failed'),
+    // which increments totalFailed and surfaces the error in the ERR counter.
+    throw error;
   }
 }
 

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   ArrowUpDown,
   Check,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
   FileImage,
@@ -29,7 +31,11 @@ import { isTauriRuntime } from '../../runtime/runtime';
 async function openInExplorer(path: string): Promise<void> {
   if (!isTauriRuntime()) return;
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('reveal_in_explorer', { path });
+  try {
+    await invoke('reveal_in_explorer', { path });
+  } catch (error) {
+    console.warn('[PhotoFlow] Could not reveal path in explorer:', error);
+  }
 }
 
 function statusLabel(status: ImageStreamStatus, enabled: boolean): string {
@@ -590,30 +596,76 @@ interface FolderFileEntry {
   modified_ms: number | null;
 }
 
+function queueStatusIcon(status: ImportQueueItem['status']) {
+  if (status === 'complete') return <CheckCircle size={11} />;
+  if (status === 'skipped' || status === 'failed') return <AlertCircle size={11} />;
+  return <RefreshCw size={10} />;
+}
+
+function queueStatusColor(status: ImportQueueItem['status']): string {
+  if (status === 'complete') return 'var(--ok)';
+  if (status === 'failed') return 'var(--warn)';
+  if (status === 'skipped') return '#e8b04a';
+  return 'var(--ink-4)';
+}
+
 function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStream; isSelected: boolean; onSelect: (id: string) => void }) {
   const { updateImageStream, importQueue } = useApp();
   const [autoPrintOpen, setAutoPrintOpen] = useState(false);
+  const [cardView, setCardView] = useState<'folder' | 'activity'>('folder');
   const [folderFiles, setFolderFiles] = useState<FolderFileEntry[]>([]);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const isDesktop = isTauriRuntime();
   const sparkData = useMemo(() => computeSparkline(stream.id, importQueue), [stream.id, importQueue]);
+
+  const streamQueue = useMemo(() =>
+    importQueue
+      .filter(item => item.imageStreamId === stream.id)
+      .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+      .slice(0, 12),
+    [importQueue, stream.id],
+  );
+
+  const issueCount = useMemo(() =>
+    streamQueue.filter(item => item.status === 'skipped' || item.status === 'failed').length,
+    [streamQueue],
+  );
+
+  const refreshFolder = async () => {
+    if (!stream.watchPath) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const files = await invoke<FolderFileEntry[]>('list_folder_files', { path: stream.watchPath });
+      setFolderFiles(files);
+    } catch {
+      setFolderFiles([]);
+    }
+  };
+
+  const deleteWatchedFile = async (filename: string) => {
+    if (!stream.watchPath) return;
+    setDeletingFile(filename);
+    try {
+      const { join } = await import('@tauri-apps/api/path');
+      const { remove } = await import('@tauri-apps/plugin-fs');
+      await remove(await join(stream.watchPath, filename));
+      await refreshFolder();
+    } catch (err) {
+      console.warn('[PhotoFlow] Could not delete watched file:', err);
+    } finally {
+      setDeletingFile(null);
+    }
+  };
 
   useEffect(() => {
     if (!isDesktop || !stream.watchPath) {
       setFolderFiles([]);
       return;
     }
-    const poll = async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const files = await invoke<FolderFileEntry[]>('list_folder_files', { path: stream.watchPath });
-        setFolderFiles(files);
-      } catch {
-        setFolderFiles([]);
-      }
-    };
-    void poll();
-    const interval = setInterval(() => void poll(), 2000);
+    void refreshFolder();
+    const interval = setInterval(() => void refreshFolder(), 2000);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDesktop, stream.watchPath]);
   const color = statusColor(stream.status, stream.enabled);
 
@@ -686,7 +738,12 @@ function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStream; isS
               <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: 'var(--ok)' }}>{stream.totalImported}</span>
               <span className="mono" style={{ fontSize: 9, letterSpacing: '0.08em', color: 'var(--ink-4)' }}>OK</span>
             </div>
-            <div className="col" style={{ lineHeight: 1.05 }}>
+            <div
+              className="col"
+              style={{ lineHeight: 1.05, cursor: stream.totalFailed ? 'pointer' : 'default' }}
+              title={stream.totalFailed ? 'Click to reset error count' : undefined}
+              onClick={stream.totalFailed ? e => { e.stopPropagation(); void updateImageStream(stream.id, { totalFailed: 0 }); } : undefined}
+            >
               <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: stream.totalFailed ? 'var(--warn)' : 'var(--ink-4)' }}>{stream.totalFailed}</span>
               <span className="mono" style={{ fontSize: 9, letterSpacing: '0.08em', color: 'var(--ink-4)' }}>ERR</span>
             </div>
@@ -698,32 +755,135 @@ function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStream; isS
         </div>
       </div>
 
-      {/* Watcher directory — live folder view */}
+      {/* Folder / Activity tabbed view */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#0a0b0d' }}>
-        <div className="row" style={{ padding: '6px 10px', borderBottom: '1px solid var(--line-soft)', gap: 8 }}>
-          <span className="mono" style={{ fontSize: 9.5, letterSpacing: '0.1em', color: 'var(--ink-4)' }}>WATCHER DIRECTORY</span>
+
+        {/* Tab header */}
+        <div className="row" style={{ borderBottom: '1px solid var(--line-soft)', gap: 0 }} onClick={e => e.stopPropagation()}>
+          {(['folder', 'activity'] as const).map(tab => {
+            const isActive = cardView === tab;
+            const label = tab === 'folder' ? 'FOLDER' : 'ACTIVITY';
+            return (
+              <button
+                key={tab}
+                className="mono"
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 9.5,
+                  letterSpacing: '0.1em',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: isActive ? '1px solid var(--accent)' : '1px solid transparent',
+                  marginBottom: -1,
+                  color: isActive ? 'var(--accent)' : 'var(--ink-4)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+                onClick={() => setCardView(tab)}
+              >
+                {label}
+                {tab === 'activity' && issueCount > 0 && (
+                  <span style={{
+                    background: 'var(--warn)',
+                    color: '#0a0b0d',
+                    borderRadius: 3,
+                    fontSize: 8.5,
+                    fontWeight: 700,
+                    padding: '0 3px',
+                    lineHeight: '13px',
+                    minWidth: 13,
+                    textAlign: 'center',
+                  }}>
+                    {issueCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <span className="grow" />
-          <span className="mono" style={{ fontSize: 9.5, color: 'var(--ink-5)' }}>NAME · MODIFIED · SIZE</span>
+          {cardView === 'folder' && (
+            <span className="mono" style={{ fontSize: 9.5, color: 'var(--ink-5)', padding: '6px 10px' }}>NAME · MODIFIED · SIZE</span>
+          )}
         </div>
+
+        {/* Tab content */}
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-          {!isDesktop || !stream.watchPath ? (
-            <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— desktop only —</div>
-          ) : folderFiles.length === 0 ? (
-            <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— folder empty —</div>
-          ) : folderFiles.slice(0, 8).map(file => (
-            <div key={file.name} className="stream-file-row" onClick={e => e.stopPropagation()}>
-              <span className="mono stream-file-name">
-                <FileImage size={10} style={{ color: 'var(--ink-4)', verticalAlign: -1, marginRight: 4, flexShrink: 0 }} />
-                {file.name}
-              </span>
-              <span className="mono" style={{ color: 'var(--ink-4)', fontSize: 10, textAlign: 'right' }}>
-                {file.modified_ms != null ? fmtTime(new Date(file.modified_ms).toISOString()) : '—'}
-              </span>
-              <span className="mono" style={{ color: 'var(--ink-5)', fontSize: 10, textAlign: 'right' }}>
-                {`${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-              </span>
-            </div>
-          ))}
+          {cardView === 'folder' ? (
+            !isDesktop || !stream.watchPath ? (
+              <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— desktop only —</div>
+            ) : folderFiles.length === 0 ? (
+              <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— folder empty —</div>
+            ) : folderFiles.slice(0, 8).map(file => (
+              <div key={file.name} className="stream-file-row" onClick={e => e.stopPropagation()}>
+                <span className="mono stream-file-name">
+                  <FileImage size={10} style={{ color: 'var(--ink-4)', verticalAlign: -1, marginRight: 4, flexShrink: 0 }} />
+                  {file.name}
+                </span>
+                <span className="mono" style={{ color: 'var(--ink-4)', fontSize: 10, textAlign: 'right' }}>
+                  {file.modified_ms != null ? fmtTime(new Date(file.modified_ms).toISOString()) : '—'}
+                </span>
+                <span className="mono" style={{ color: 'var(--ink-5)', fontSize: 10, textAlign: 'right' }}>
+                  {`${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                </span>
+                <button
+                  title="Delete file"
+                  disabled={deletingFile === file.name}
+                  onClick={e => { e.stopPropagation(); void deleteWatchedFile(file.name); }}
+                  style={{
+                    background: 'none', border: 'none', cursor: deletingFile === file.name ? 'wait' : 'pointer',
+                    padding: '0 2px', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', flexShrink: 0,
+                    opacity: deletingFile === file.name ? 0.4 : 1,
+                  }}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))
+          ) : streamQueue.length === 0 ? (
+            <div className="mono" style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--ink-5)', fontSize: 10.5 }}>— no activity yet —</div>
+          ) : streamQueue.map(item => {
+            const color = queueStatusColor(item.status);
+            const isIssue = item.status === 'skipped' || item.status === 'failed';
+            return (
+              <div
+                key={item.id}
+                style={{
+                  padding: '5px 10px',
+                  borderBottom: '1px solid var(--line-soft)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                  background: isIssue ? 'rgba(232,176,74,0.04)' : 'transparent',
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="row" style={{ gap: 6, minWidth: 0 }}>
+                  <span style={{ color, flexShrink: 0 }}>{queueStatusIcon(item.status)}</span>
+                  <span className="mono" style={{
+                    fontSize: 10.5,
+                    color: 'var(--ink-2)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                    minWidth: 0,
+                  }}>
+                    {item.filename}
+                  </span>
+                  <span className="mono" style={{ fontSize: 9.5, color, flexShrink: 0 }}>
+                    {item.status === 'complete' ? 'OK' : item.status === 'skipped' ? 'SKIPPED' : item.status === 'failed' ? 'FAIL' : item.status.toUpperCase()}
+                  </span>
+                </div>
+                {isIssue && item.error && (
+                  <span className="mono" style={{ fontSize: 9.5, color: 'var(--ink-4)', paddingLeft: 17, lineHeight: 1.3 }}>
+                    {item.error}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

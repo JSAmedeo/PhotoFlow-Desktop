@@ -37,6 +37,10 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
 
 #[tauri::command]
 fn reveal_in_explorer(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
         .arg(&path)

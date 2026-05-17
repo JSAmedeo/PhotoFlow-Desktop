@@ -36,11 +36,10 @@ The correct framing is:
 Completed 2026-05-13. What was built:
 
 - Polished dark operational desktop UI (1440×900, scale-to-fit)
-- Gallery tab: searchable/filterable session grid, photo thumbnails, session preview panel
-- Session Workshop tab: interactive before/after compare slider, photo strip, tool toolbar, processing controls
-- Left panel: location selector, date navigation, hourly folders, daily stats bar chart
+- Gallery tab: searchable session grid, photo thumbnails, session preview panel
+- Session Workshop tab: interactive before/after compare slider, session strip, active-session photo strip, tool toolbar
+- Left panel: location selector, date navigation with calendar popover, hourly folders, daily stats bar chart
 - Tab bar: Gallery, Session Workshop (Streams/Output/Config show Phase 3+ placeholders)
-- Status bar: venue, session, frame, queue, GPU readouts
 - 14 mock sessions, 12 hourly time blocks, 4 capture locations
 - Design handoff extracted and matched visually
 
@@ -139,7 +138,7 @@ Add desktop-only watched-folder ingest:
 - supported image files copied into managed storage under `C:\PhotoFlow Desktop`
 - managed path organized by date/location/session
 - SQLite photo/import queue metadata for watched-folder imports
-- visible watcher controls in the Local Ingest panel
+- visible watcher controls in the then-current Local Ingest panel; these controls later moved to Image Streams and the Workshop right panel was removed
 - browser mode remains manual-import only and shows watcher as desktop-only
 
 The Fresh desktop reset control was removed in Phase 7 after Gallery session deletion became available. Operators should delete unwanted sessions/photos through Gallery instead of wiping the managed desktop storage root. Previous app-local imported photo path compatibility was intentionally removed and should not be reintroduced unless explicitly requested.
@@ -157,7 +156,7 @@ Add deterministic filename-based session routing:
 - sort photos in sessions by sequence number where present, then created/imported time and filename
 - keep unrouted files visible as skipped/unrouted exceptions instead of assigning them to the active session
 - derive hourly folders and Today at a glance from current-day import timestamps, not photo capture metadata
-- keep skipped import hours visible as empty no-photo hours between active import hours
+- initially kept skipped import hours visible as empty no-photo hours between active import hours; current UI hides empty folder rows and constrains Today at a glance to 7 AM through 10 PM
 
 Capture location parsing and manual capture-location assignment are deferred. Future mobile app metadata should supply capture-location data.
 
@@ -243,13 +242,16 @@ A series of targeted fixes applied after Phase 8, before Phase 9 was scoped.
 
 **Hourly folders panel (LeftPanel):**
 - Empty gap hours between active import hours are now hidden from the folder list
-- "Today at a glance" bar chart still shows all hours including gaps for visual context
+- Hour folder badges show the number of sessions in that hour; the supporting line still reports sessions and photos
+- Location filtering applies to hourly folders unless "All Locations" is selected
+- "Today at a glance" is constrained to 7 AM through 10 PM and uses standard-time labels
 - Auto-selects the most recent active hour on load if the persisted selection is empty or stale
 
 **Operating date selector (LeftPanel + AppContext + repository):**
 - Left/right chevrons in the Operating Date section navigate backward and forward by day
 - Right chevron is disabled when viewing today (no future data exists)
 - Calendar icon accents when viewing today
+- Clicking the date control opens a calendar popover for direct date selection
 - `operatingDate: Date` added to AppContext as a midnight-normalized `Date` value
 - `hours` changed from a fetched state to a derived `useMemo(buildHourlyImportBuckets(allPhotos, operatingDate))` — no extra fetch needed when the date changes
 - Gallery, Workshop filmstrip, and hourly folders all respond to date navigation automatically
@@ -261,10 +263,15 @@ A series of targeted fixes applied after Phase 8, before Phase 9 was scoped.
 - Sessions with no visible photos show a color tile placeholder
 - Horizontal footprint is now consistent regardless of session photo count
 
-**Workshop right panel (RightPanel):**
-- Local Ingest section removed (Import Photos button, watched folder controls, queue status)
-- `importPhotosToActiveSession` remains in context for future use; nothing calls it from this panel
-- Processing Queue demo section remains
+**Post-Phase 8 operational UI cleanup:**
+- TopBar phase/workspace breadcrumb text was removed; the header now keeps the brand and utility icons only
+- StatusBar was removed; do not reintroduce bottom GPU/session/queue chrome unless the product needs it again
+- Gallery filter tabs (`All`, `Flagged`, `Processed`, `Pending`), processing details, favorite-session action, flag-for-review action, handler/status rows, and stream code suffixes were removed from the user-facing panel
+- Workshop `RightPanel.tsx` was removed; `App.tsx` keeps an empty right-side placeholder panel to preserve the intended compare-view width
+- Workshop header placeholder controls, frame metadata chips, overlay camera/color chips, and shortcut-helper text were removed
+- Workshop layout now shows the hourly/session strip above the compare view, the current-session thumbnails below the toolbar, and active-session metadata below those thumbnails
+- The compare view has a light separator line above the active-session thumbnails
+- `importPhotosToActiveSession` remains in context for future use, but no current visible panel calls it
 
 ## Performance Patterns Established (Post-Phase 8)
 
@@ -358,11 +365,12 @@ Act as an implementation partner. Make progress but identify bad assumptions ear
 
 ## Phase Checklist Rule
 
-Every development phase must include a dedicated phase checklist document.
+Every development phase must include a dedicated phase checklist document under `docs/phases/`.
 
 For each phase:
 
-- Create a checklist file named `PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Create a checklist file named `docs/phases/PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Put any phase prompt, implementation plan, or phase-specific notes in `docs/phases/` using the existing `PHASE_X_*.md` naming pattern
 - Define the phase goal
 - Define what is in scope
 - Define what is out of scope

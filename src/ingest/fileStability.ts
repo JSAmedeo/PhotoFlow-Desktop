@@ -22,8 +22,12 @@ export async function waitForStableFile(
     throw new Error('Watched path is not a file.');
   }
 
+  // Cap each check interval so a large user-configured settle delay can't stall
+  // the watcher indefinitely. Max total wait = maxAttempts × effectiveDelay (25 s default).
+  const effectiveDelay = Math.min(settleDelayMs, 5_000);
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    await delay(settleDelayMs);
+    await delay(effectiveDelay);
     const next = await stat(path);
 
     if (!next.isFile) {

@@ -133,7 +133,7 @@ Primary reference: `snapdesk.html` — open in browser to compare against the ru
 
 Do not delete or modify the handoff folder. Use it as ongoing visual direction for all phases.
 
-## Project Structure (as of Phase 8 + loose end fixes)
+## Project Structure (as of Phase 8 + operational UI cleanup)
 
 ```
 src/
@@ -144,16 +144,14 @@ src/
     Seg.tsx          ← segmented control
     Check.tsx        ← checkbox
     TopBar.tsx
-    LeftPanel.tsx    ← location select, operating date navigator, hourly folders (non-empty only)
+    LeftPanel.tsx    ← location select, date navigator/calendar popover, hourly folders, Today at a glance
     TabBar.tsx       ← reads/sets activeTab via context
-    StatusBar.tsx    ← reads session data from context
   features/
     gallery/
       GalleryCenter.tsx  ← filters sessions by location + hour + operatingDate from context
-      GalleryRight.tsx
+      GalleryRight.tsx   ← preview, session info, open/delete actions; no processing/favorite/flag controls
     workshop/
-      CenterPanel.tsx
-      RightPanel.tsx     ← background removal, enhancement, upscaling, processing queue (no local ingest)
+      CenterPanel.tsx    ← session strip, compare view, toolbar, thumbnails, active-session info
       HourFilmstrip.tsx  ← filtered by hour + location + operatingDate; 2 thumbnails per session + badge
     streams/
       ImageStreamsCenter.tsx  ← stream rail, cards, live folder view (2s poll), sparkline, modals
@@ -302,6 +300,14 @@ This app is intended for production use in high-volume photo venues. Responsiven
 - Gallery and Workshop panels must stay mounted across Gallery↔Workshop tab switches using CSS `display: contents` / `display: none`. This preserves the browser's image decode cache so switching back is instant. Do not revert to conditional rendering for these two tabs.
 - The Streams tab may remain conditionally mounted because it runs a background polling loop.
 
+**Current operational UI cleanup rules:**
+- `StatusBar.tsx` and Workshop `RightPanel.tsx` were intentionally removed. `App.tsx` keeps an empty right-side placeholder panel in Workshop to preserve compare-view proportions.
+- Gallery no longer exposes the old status filter tabs, processing details, Favorite session, Flag for review, Handler, Status, or stream-code suffix rows.
+- Workshop no longer exposes background-removal/enhancement/upscaling placeholder controls, frame metadata, overlay camera/color chips, or shortcut-helper text.
+- Workshop order is session strip above the compare view, toolbar, current-session thumbnails, then active-session metadata.
+- Hourly folder badges show session counts. Today at a glance is 7 AM through 10 PM with standard-time labels.
+- Location filtering applies to hourly folders and session strips unless "All Locations" is selected.
+
 **What not to do:**
 - Do not trigger any storage read or context refresh in response to a click that only changes selection.
 - Do not store full-resolution image data in React state that gets spread or copied on every render.
@@ -334,11 +340,12 @@ When handing work back, include:
 
 ## Phase Checklist Rule
 
-Every development phase must include a dedicated phase checklist document.
+Every development phase must include a dedicated phase checklist document under `docs/phases/`.
 
 For each phase:
 
-- Create a checklist file named `PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Create a checklist file named `docs/phases/PHASE_X_ACCEPTANCE_CHECKLIST.md`
+- Put any phase prompt, implementation plan, or phase-specific notes in `docs/phases/` using the existing `PHASE_X_*.md` naming pattern
 - Define the phase goal
 - Define what is in scope
 - Define what is out of scope

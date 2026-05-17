@@ -105,10 +105,13 @@ export async function autoImportWatchedFile(
     await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'imported', candidate.filename);
     return 'complete';
   } catch (error) {
+    const msg = error instanceof Error ? error.message
+      : typeof error === 'string' ? error
+      : 'Watched-folder import failed.';
     await updateImportQueueItem(queueItem.id, {
       status: 'failed',
       progress: 100,
-      error: error instanceof Error ? error.message : 'Watched-folder import failed.',
+      error: msg,
       completedAt: new Date().toISOString(),
     });
     await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'failed', candidate.filename);
