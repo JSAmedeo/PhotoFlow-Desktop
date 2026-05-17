@@ -1,4 +1,3 @@
-import { readFile, remove } from '@tauri-apps/plugin-fs';
 import {
   addImportQueueItem,
   importWatchedPhotoToSession,
@@ -78,6 +77,7 @@ export async function autoImportWatchedFile(
       error: undefined,
     });
 
+    const { readFile } = await import('@tauri-apps/plugin-fs');
     const bytes = await readFile(candidate.path);
     const file = new File([bytes], candidate.filename, {
       type: mimeTypeFor(candidate.filename),
@@ -90,6 +90,7 @@ export async function autoImportWatchedFile(
     }
 
     try {
+      const { remove } = await import('@tauri-apps/plugin-fs');
       await remove(candidate.path);
       await updateImportQueueItem(queueItem.id, {
         error: 'Imported into managed storage; source file removed from watched folder.',

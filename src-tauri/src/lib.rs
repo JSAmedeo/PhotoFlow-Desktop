@@ -38,9 +38,36 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
 #[tauri::command]
 fn reveal_in_explorer(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
+
+    // Guard 1: path must exist on disk.
     if !p.exists() {
         return Err(format!("Path does not exist: {path}"));
     }
+
+    // Guard 2: path must be under an allowed root.
+    // Windows: C:\PhotoFlow Desktop  or  %LOCALAPPDATA%\PhotoFlow Desktop
+    // macOS/Linux: $HOME/PhotoFlow Desktop
+    let canonical = std::fs::canonicalize(p).map_err(|e| e.to_string())?;
+
+    let allowed = {
+        let mut roots: Vec<std::path::PathBuf> = vec![
+            std::path::PathBuf::from(r"C:\PhotoFlow Desktop"),
+        ];
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            roots.push(std::path::PathBuf::from(local).join("PhotoFlow Desktop"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            roots.push(std::path::PathBuf::from(home).join("PhotoFlow Desktop"));
+        }
+        roots
+    };
+
+    if !allowed.iter().any(|root| canonical.starts_with(root)) {
+        return Err(format!(
+            "Path is outside the allowed PhotoFlow Desktop directories: {path}"
+        ));
+    }
+
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
         .arg(&path)
@@ -56,6 +83,7 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
         .arg(&path)
         .spawn()
         .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 

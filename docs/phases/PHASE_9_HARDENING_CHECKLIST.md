@@ -58,6 +58,8 @@ Harden the Phase 8 codebase against security risks, resilience failures, and cod
 
 - [x] **3c** — `src/ingest/watchedFolderService.ts`: Top-level `import { join }` and `import { readDir, watch }` replaced with dynamic `await import(...)` calls inside the functions that use them, placed after the `isTauriRuntime()` guard. `import type { UnwatchFn }` retained as a type-only import (erased at runtime).
 
+- [x] **3c-followup** — `src/ingest/autoImportPipeline.ts`: Lazy-load `readFile`/`remove` in `autoImportPipeline.ts`. Top-level `import { readFile, remove }` removed; replaced with dynamic `await import('@tauri-apps/plugin-fs')` calls at each use site inside the Tauri-only execution path.
+
 ### Priority 4 — Test Foundation
 
 - [x] **4a** — Vitest installed as dev dependency. `"test": "vitest run"` added to `package.json`. Tests written:
@@ -89,7 +91,7 @@ Browser mode check: `npm run dev` → Gallery, Workshop, Streams tabs functional
 - [ ] `npm run validate:filename-parser` — 12 cases pass
 - [ ] `npm run dev` — browser mode loads, Gallery/Workshop/Streams tabs functional
 - [ ] `src-tauri/capabilities/default.json` — `{ "path": "**" }` entry is gone
-- [ ] `reveal_in_explorer` — returns `Err` for non-existent paths and paths outside allowed roots
+- [x] `reveal_in_explorer` — returns `Err` for non-existent paths and paths outside allowed roots
 - [ ] Session routing — new sessions get unique IDs with timestamp suffix
 - [ ] File stability — settle delay is capped at 5 s per check
 
@@ -122,8 +124,33 @@ Browser mode check: `npm run dev` → Gallery, Workshop, Streams tabs functional
 
 ---
 
+### Component Structure
+
+- [x] **7a** — `src/features/streams/ImageStreamsCenter.tsx` split into focused component files:
+  - `streamUiHelpers.ts` — pure helpers, constants, and shared interfaces (`FolderFileEntry`, template types, `statusLabel`, `statusColor`, `fmtTime`, `computeSparkline`, `codeFromName`, `sanitizePreview`, `previewFilename`, `makeField`, `makePrintItem`)
+  - `StreamActivityTab.tsx` — ACTIVITY tab content; receives `streamQueue` + `issueCount` as props; no `useApp` call
+  - `StreamFolderTab.tsx` — FOLDER tab content; receives `folderFiles`, `watchPath`, `isDesktop`, `deletingFile`, `onDelete` as props; no poll ownership
+  - `AutoPrintSetupDialog.tsx` — auto-print dialog + `TemplatePicker`, `PrintSizeSelect`, `PrinterSelect`, `TemplateThumb`, `PrintSizeChip`, `useClickOutside`
+  - `StreamCard.tsx` — stream card + `Toggle` (exported), `Sparkline`, `openInExplorer`, folder poll `useEffect`, `streamQueue`/`issueCount` memos
+  - `StreamSetupDialog.tsx` — create/edit dialog (renamed from `PhotoOpDialog`); imports `Toggle` from `StreamCard.tsx`
+  - `ImageStreamsCenter.tsx` — root layout only (~100 lines); `useApp` for `imageStreams` + `importQueue` only
+  - `npm run typecheck` and `npm run lint` pass with 0 errors after split
+
+---
+
+### Documentation
+
+- [x] **8a** — README and docs accuracy pass:
+  - Fallback routing description updated (unrouted → fallback-routed into derived session)
+  - Duplicate behavior updated (skip by many fields → re-imported with unique `_2`/`_3` suffix; only exact source path is skipped)
+  - Phase heading updated to "Stream ingest hardening and activity visibility"
+  - Phase plan table updated to "In progress"
+  - Known Limitations `reveal_in_explorer` entry updated to reflect current root-check guard behavior
+
+---
+
 ## Known Limitations / Future Work
 
-- **Watch-path reveal:** `reveal_in_explorer` will return an error for watch folders that live outside `C:\PhotoFlow Desktop` or `$LOCALAPPDATA`. Operators who configure watch folders on other drives will not be able to use the "Reveal" button. Future fix: use Tauri's runtime scope API to allow user-selected paths, or constrain watch folders to within `$APPLOCALDATA`.
+- **Watch-path reveal for external drives:** `reveal_in_explorer` will return an error (and log a console warning) for watch folders configured outside `C:\PhotoFlow Desktop` or `%LOCALAPPDATA%`. Operators who place watch folders on other drives (e.g. `D:\test-watcher`) will see no crash but will not be able to use the Reveal button for those folders. Future fix: Tauri runtime scope API per-path injection, or constrain watch-folder selection to within the allowed roots.
 - **fs:scope watch-folder regression (re-opened):** The Phase 9 narrowed scope (`C:\PhotoFlow Desktop\**` + `$APPLOCALDATA\...`) blocked `fs:allow-watch` and `fs:allow-read-dir` on user-configured watch folders outside those roots (e.g. `D:\test-watcher`). Tauri v2 does not expose a `fs:allow-watch-all` permission that bypasses scope checks independently of read/write scope, and dynamic scope injection (`Manager::add_scope`) requires non-trivial Rust infrastructure. The `**` entry has been restored to `fs:scope` so operators can place watch folders on any drive. The `reveal_in_explorer` guard (1b) and the specific managed-storage path entries are retained and remain effective. A future phase should implement runtime scope injection when the user selects a watch folder and remove the broad `**` entry.
 - **Dynamic fs:scope for watch folders:** The `fs:scope` capability entry includes `**` to support arbitrary watch folder paths. A future phase should replace this with per-path scope injection at the time the user configures a watch folder, and remove the broad entry.

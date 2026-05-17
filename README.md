@@ -2,7 +2,7 @@
 
 Local-first desktop application for operational photo workflows at high-volume souvenir photography venues.
 
-## Current Stage: Phase 9 — TBD (Phase 8 complete)
+## Current Stage: Phase 9 — Stream ingest hardening and activity visibility
 
 The app now supports two runtime modes:
 
@@ -121,7 +121,7 @@ Current production import work is driven by configured **Image Streams** watched
 When photos are imported:
 - each valid routed file becomes a `Photo` record in the parsed filename session
 - imported thumbnails appear in Gallery, Workshop thumbnails, the selected preview, and the before/after compare area
-- exact duplicates in the same routed session are skipped by filename, file size, last modified time, watched source path, and sequence number where available
+- re-dropped files are imported as additional photos using a unique filename suffix such as `_2` or `_3`; only an identical source path already recorded as successfully imported is skipped
 - unsupported files and storage failures are shown in the import queue
 - the routed session photo count is updated immediately
 
@@ -133,7 +133,7 @@ Image stream metadata is stored in the same runtime-selected metadata layer: loc
 
 Phase 7 adds filename-based session routing. Filenames containing the first valid `[A-Z]{3}\d{6}` session ID are routed automatically, with lowercase keys normalized to uppercase. Supported sequence patterns near the session ID, such as `XYZ123456_01.jpg`, `XYZ123456-001.jpg`, and `IMG_4021_XYZ123456_05.jpg`, preserve sequence metadata for display ordering. Operators should not manually create sessions from selected imported photos; sessions are created automatically from parsed filename session IDs.
 
-Files without a valid session ID are treated as unrouted exceptions and are skipped/marked for review instead of silently attaching to the wrong session.
+Files with a valid session code route to that session. Files without a recognizable session code are fallback-routed into a derived session based on the filename stem, allowing operators to review and correct them later.
 
 Hourly folders in the left panel are based on current-day import time, not photo capture metadata. The panel starts empty for a day with no imports, creates/fills hour folders as photos import, filters by selected capture location unless **All Locations** is selected, and shows the session count in each folder badge. Today at a glance uses the same current-day hourly folder data, constrained to 7 AM through 10 PM with standard-time labels.
 
@@ -238,7 +238,7 @@ archive/               ← ignored original handoff zip/archive files
 | 6 | Watched folder ingest | Complete |
 | 7 | Filename-based session routing | Complete |
 | 8 | Image streams foundation | Complete |
-| 9 | TBD | **Next** |
+| 9 | Stream ingest hardening and activity visibility | **In progress** |
 
 ## Phase checklist rule
 
