@@ -23,7 +23,7 @@ import type {
 } from '../data/models';
 import {
   initStore,
-  getSessions, getPhotos, getPhotosBySessionId, getLocations,
+  getSessions, getPhotos, getPhotosBySessionId, getPhotoById, getLocations,
   getSelectedSessionId, setSelectedSessionId,
   getSelectedPhotoId,   setSelectedPhotoId,
   getActiveTab,         setActiveTab,
@@ -93,6 +93,7 @@ interface AppActions {
   clearImportQueue: () => void;
   chooseWatchedFolder: () => Promise<void>;
   updateWatchedFolderSettings: (changes: Partial<WatchedFolderSettings>) => Promise<void>;
+  refreshPhotoInPlace: (photoId: string) => Promise<void>;
   getPhotoVersions: (photoId: string) => Promise<PhotoVersion[]>;
   switchPhotoVersion: (photoId: string, kind: PhotoVersionKind) => Promise<void>;
   createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
@@ -578,6 +579,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [imageStreams, refreshStreamsAndLocations, updateWatchedFolderSettings, watchedFolderSettings.watchEnabled]);
 
+  const refreshPhotoInPlace = useCallback(async (photoId: string): Promise<void> => {
+    const raw = await getPhotoById(photoId);
+    if (!raw) return;
+    const [resolved] = await resolvePhotoSources([raw]);
+    if (!resolved) return;
+    setAllPhotos(current => current.map(p => p.id === photoId ? resolved : p));
+    setPhotos(current => current.map(p => p.id === photoId ? resolved : p));
+  }, []);
+
   const getPhotoVersions = useCallback(async (photoId: string): Promise<PhotoVersion[]> => {
     return repoGetPhotoVersions(photoId);
   }, []);
@@ -628,7 +638,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setLocationId, setOperatingDate, setFilter,
     toggleFavorite, toggleFlag, importPhotosToActiveSession, removeImportQueueItem, clearCompletedImports, clearImportQueue,
     chooseWatchedFolder, updateWatchedFolderSettings,
-    getPhotoVersions, switchPhotoVersion,
+    refreshPhotoInPlace, getPhotoVersions, switchPhotoVersion,
     createImageStream, updateImageStream, deleteImageStream, chooseImageStreamFolder, clearImageStreamFolder,
     resetDemo,
   };

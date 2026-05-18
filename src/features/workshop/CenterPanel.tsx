@@ -1,7 +1,11 @@
 import { useRef, useEffect, useState, memo, useCallback } from 'react';
-import { Maximize2, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn, Undo2, Redo2, Crop, Upload, Check, Trash2 } from 'lucide-react';
+import {
+  Maximize2, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn,
+  Undo2, Redo2, Crop, Upload, Check, Trash2, Columns2, Sparkles,
+} from 'lucide-react';
 import { HourFilmstrip } from './HourFilmstrip';
 import { useApp } from '../../context/AppContext';
+import type { PhotoVersion } from '../../data/models';
 import { confirmDestructive } from '../../utils/confirm';
 
 interface CenterPanelProps {
@@ -51,6 +55,7 @@ export function CenterPanel({
   const {
     sessions, photos, selectedSessionId, selectedPhotoId, selectedPhotoIds,
     selectPhoto, togglePhotoSelection, selectPhotoRange, deleteSelectedPhotos,
+    getPhotoVersions, refreshPhotoInPlace,
   } = useApp();
   const session = sessions.find(s => s.id === selectedSessionId) ?? sessions[0];
   const selectedIndex = Math.max(0, photos.findIndex(p => p.id === selectedPhotoId));
@@ -60,12 +65,51 @@ export function CenterPanel({
   const wrapRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [compareMode, setCompareMode] = useState(true);
+  const [versions, setVersions] = useState<PhotoVersion[]>([]);
+
+  // Load versions when photo changes.
+  useEffect(() => {
+    if (!currentPhoto?.id) { setVersions([]); return; }
+    void getPhotoVersions(currentPhoto.id).then(setVersions);
+  }, [currentPhoto?.id, currentPhoto?.processingStatus, getPhotoVersions]);
+
+  // Poll for photo refresh while enhancement is running.
+  useEffect(() => {
+    if (currentPhoto?.processingStatus !== 'processing') return;
+    const id = setInterval(() => {
+      void refreshPhotoInPlace(currentPhoto.id).then(() => {
+        // Versions reload via the processingStatus dependency above once status changes.
+      });
+    }, 1500);
+    return () => clearInterval(id);
+  }, [currentPhoto?.id, currentPhoto?.processingStatus, refreshPhotoInPlace]);
+
+  // Auto-enable compare mode when an enhanced version becomes available.
+  useEffect(() => {
+    if (versions.some(v => v.kind === 'enhanced')) {
+      setCompareMode(true);
+    }
+  }, [versions]);
+
+  const hasEnhanced = versions.some(v => v.kind === 'enhanced');
+  const isProcessing = currentPhoto?.processingStatus === 'processing';
+
+  const beforeUrl = currentPhoto?.beforeImageUrl ?? currentPhoto?.displayUrl ?? '/demo-assets/before.jpg';
+  const afterUrl  = currentPhoto?.afterImageUrl  ?? beforeUrl;
+
+  const beforeLabel = 'ORIGINAL';
+  const afterLabel  = hasEnhanced
+    ? 'ENHANCED ✦'
+    : isProcessing
+      ? 'ENHANCING…'
+      : 'ORIGINAL';
 
   const updateSplit = useCallback((e: MouseEvent) => {
     if (!wrapRef.current) return;
     const r = wrapRef.current.getBoundingClientRect();
     setSplit(Math.max(2, Math.min(98, ((e.clientX - r.left) / r.width) * 100)));
-  }, [setSplit]); // setSplit is a useState setter — stable across renders
+  }, [setSplit]);
 
   useEffect(() => {
     const m = (e: MouseEvent) => { if (draggingRef.current) updateSplit(e); };
@@ -73,7 +117,7 @@ export function CenterPanel({
     window.addEventListener('mousemove', m);
     window.addEventListener('mouseup', u);
     return () => { window.removeEventListener('mousemove', m); window.removeEventListener('mouseup', u); };
-  }, [updateSplit]); // updateSplit is stable via useCallback — attaches once
+  }, [updateSplit]);
 
   useEffect(() => {
     if (selectedIndex >= 0 && activePhoto !== selectedIndex + 1) {
@@ -91,6 +135,8 @@ export function CenterPanel({
   if (!visible) return <div className="panel center" />;
   if (!session) return <div className="panel center" />;
 
+  const canCompare = hasEnhanced || isProcessing;
+
   return (
     <div className="panel center">
       <HourFilmstrip />
@@ -103,25 +149,76 @@ export function CenterPanel({
             ref={wrapRef}
             style={{ width: '100%', height: '100%', maxWidth: 1080, maxHeight: 620, aspectRatio: '1080 / 620', '--split': `${split}%` } as React.CSSProperties}
           >
-            <div className="pane before">
-              <img src={currentPhoto?.beforeImageUrl ?? '/demo-assets/before.jpg'} alt="Before" onLoad={() => setImgLoaded(true)}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-            <div className="pane after">
-              <div className="checker" style={{ position: 'absolute', inset: 0 }} />
-              <img src={currentPhoto?.afterImageUrl ?? currentPhoto?.beforeImageUrl ?? '/demo-assets/after.png'} alt="After"
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-            <div className="splitter" onMouseDown={e => { draggingRef.current = true; document.body.style.cursor = 'ew-resize'; updateSplit(e.nativeEvent); }} />
-            <div className="handle"   onMouseDown={e => { draggingRef.current = true; document.body.style.cursor = 'ew-resize'; updateSplit(e.nativeEvent); }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                <path d="M8 6 2 12l6 6M16 6l6 6-6 6"/>
-              </svg>
-            </div>
-            <div className="compare-label l mono">BEFORE — ORIGINAL</div>
-            <div className="compare-label r mono">AFTER — PROCESSED · v2.4</div>
+            {compareMode && canCompare ? (
+              <>
+                {/* Before — always original */}
+                <div className="pane before">
+                  <img
+                    src={beforeUrl}
+                    alt="Before"
+                    onLoad={() => setImgLoaded(true)}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+
+                {/* After — enhanced when available */}
+                <div className="pane after">
+                  <div className="checker" style={{ position: 'absolute', inset: 0 }} />
+                  <img
+                    src={afterUrl}
+                    alt="After"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  {isProcessing && !hasEnhanced && (
+                    <div style={{
+                      position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'rgba(0,0,0,0.35)',
+                    }}>
+                      <Sparkles size={22} style={{ color: 'var(--accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Slider */}
+                <div
+                  className="splitter"
+                  onMouseDown={e => { draggingRef.current = true; document.body.style.cursor = 'ew-resize'; updateSplit(e.nativeEvent); }}
+                />
+                <div
+                  className="handle"
+                  onMouseDown={e => { draggingRef.current = true; document.body.style.cursor = 'ew-resize'; updateSplit(e.nativeEvent); }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                    <path d="M8 6 2 12l6 6M16 6l6 6-6 6"/>
+                  </svg>
+                </div>
+
+                <div className="compare-label l mono">{beforeLabel}</div>
+                <div className="compare-label r mono">{afterLabel}</div>
+              </>
+            ) : (
+              /* Single view — shows the active version (displayUrl) */
+              <div className="pane before" style={{ clipPath: 'none' }}>
+                <img
+                  src={currentPhoto?.displayUrl ?? beforeUrl}
+                  alt="Photo"
+                  onLoad={() => setImgLoaded(true)}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                {hasEnhanced && (
+                  <div className="compare-label r mono" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Sparkles size={10} /> ENHANCED
+                  </div>
+                )}
+              </div>
+            )}
+
             {imgLoaded && (
-              <div style={{ position: 'absolute', bottom: 38, right: 10, fontFamily: 'JetBrains Mono', fontSize: 10, color: 'rgba(255,255,255,0.6)', background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: 2, zIndex: 4 }}>
+              <div style={{
+                position: 'absolute', bottom: 38, right: 10, fontFamily: 'JetBrains Mono',
+                fontSize: 10, color: 'rgba(255,255,255,0.6)', background: 'rgba(0,0,0,0.5)',
+                padding: '2px 6px', borderRadius: 2, zIndex: 4,
+              }}>
                 {zoom}% · FIT
               </div>
             )}
@@ -148,6 +245,16 @@ export function CenterPanel({
             <button className="icon-btn"><Undo2 size={14} /></button>
             <button className="icon-btn"><Redo2 size={14} /></button>
             <button className="icon-btn"><Crop size={14} /></button>
+          </div>
+          <div className="tool-group">
+            <button
+              className={`icon-btn ${compareMode ? 'active' : ''}`}
+              title={compareMode ? 'Hide compare' : 'Compare Original / Enhanced'}
+              disabled={!canCompare}
+              onClick={() => setCompareMode(m => !m)}
+            >
+              <Columns2 size={14} />
+            </button>
           </div>
           <div className="grow-spacer" />
           <div className="tool-group" style={{ borderRight: 'none', paddingRight: 0 }}>
