@@ -2,7 +2,9 @@
 
 Local-first desktop application for operational photo workflows at high-volume souvenir photography venues.
 
-## Current Stage: Phase 9 — Stream ingest hardening and activity visibility
+## Current Stage: Security hardening complete — Phase 10 next
+
+Phase 9 (stream ingest hardening and activity visibility) is complete. A targeted security hardening pass was completed before Phase 10 feature work begins — see `docs/phases/SECURITY_HARDENING_CHECKLIST.md`.
 
 The app now supports two runtime modes:
 
@@ -56,6 +58,18 @@ Supported watched-folder file types:
 ```
 
 The watcher waits for a detected file to become stable before importing, which protects FTP transfers that are still writing into the watched folder. By default, a file must keep the same size and modified time across two consecutive checks before PhotoFlow reads it. After a watched file is successfully copied into managed PhotoFlow storage and metadata is recorded, PhotoFlow removes the original source file from the watched intake folder.
+
+## Security hardening (pre-Phase 10)
+
+Applied before Phase 10 feature work. No UI changes.
+
+**`list_folder_files` path guard (`src-tauri/src/lib.rs`):** The Tauri command that the live folder view uses to list files in a watched directory now calls `canonicalize()` and checks the resolved path against a blocked-roots list (`C:\Windows`, `C:\Program Files`, `/etc`, `/proc`, etc.) before calling `read_dir`. A crafted `watchPath` pointing at system directories returns an empty result instead of enumerating sensitive paths.
+
+**`watchPath` validation (`src/data/repository.ts`):** `createImageStream` and `updateImageStream` now call `validateWatchPath()` before writing to SQLite. Empty strings, UNC/network paths (`\\server\share`), relative paths, and system-reserved roots are rejected with a descriptive error. `StreamSetupDialog` catches the thrown error and shows it in the dialog footer.
+
+**Native destructive dialogs (`src/utils/confirm.ts`):** All `window.confirm` and `window.prompt` calls in Gallery, Workshop, and the stream setup dialog are replaced with Tauri's native `ask()` dialog (rendered outside the WebView by the OS). A shared `confirmDestructive(message, title)` utility handles the Tauri/browser runtime split — in browser mode it falls back to `window.confirm`.
+
+**Watcher deletion-event fix (`src/ingest/autoImportPipeline.ts`):** After a file is successfully imported, `remove()` deletes it from the watch folder. This triggered a new FS watcher event for the same path. Because successful imports were not added to `recentlyHandled`, the event went through the full pipeline until `stat()` failed with "file not found", logging a spurious FAIL. The pipeline now checks file existence before adding a queue item; deletion events are swallowed silently.
 
 ## Other commands
 
@@ -208,14 +222,23 @@ docs/
     PHASE_7_FILENAME_SESSION_ROUTING.md
     PHASE_8_ACCEPTANCE_CHECKLIST.md
     PHASE_8_IMAGE_STREAMS.md
+    PHASE_9_ACCEPTANCE_CHECKLIST.md
+    SECURITY_HARDENING_CHECKLIST.md
 src-tauri/            ← Tauri v2 desktop runtime shell
 src/
   components/         ← shared UI primitives
   features/
     gallery/           ← Gallery tab
     workshop/          ← Session Workshop tab
+    streams/           ← Image Streams tab
   data/               ← models, seed data, storage, repository
   context/            ← AppContext (centralized data state)
+  ingest/             ← filename parser, session routing, watcher, import pipeline
+  storage/            ← photo storage interface + Tauri/browser implementations
+  runtime/            ← isTauriRuntime() helper
+  utils/
+    slugify.ts         ← shared slug utility
+    confirm.ts         ← confirmDestructive() — native dialog with browser fallback
   styles/
     global.css         ← design system CSS
   App.tsx             ← root layout, scale-to-fit, UI-only state
@@ -238,7 +261,9 @@ archive/               ← ignored original handoff zip/archive files
 | 6 | Watched folder ingest | Complete |
 | 7 | Filename-based session routing | Complete |
 | 8 | Image streams foundation | Complete |
-| 9 | Stream ingest hardening and activity visibility | **In progress** |
+| 9 | Stream ingest hardening and activity visibility | Complete |
+| — | Security hardening (pre-Phase 10) | Complete |
+| 10 | (TBD) | **Next** |
 
 ## Phase checklist rule
 

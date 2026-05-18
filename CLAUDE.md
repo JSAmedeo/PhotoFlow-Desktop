@@ -58,7 +58,42 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 6 | Watched Folder Ingest | **COMPLETE** |
 | 7 | Filename-Based Session Routing | **COMPLETE** |
 | 8 | Image Streams Foundation | **COMPLETE** |
-| 9 | (TBD) | **NEXT** |
+| 9 | Stream ingest hardening + activity visibility | **COMPLETE** |
+| — | Security hardening (pre-Phase 10) | **COMPLETE** |
+| 10 | (TBD) | **NEXT** |
+
+## Security Hardening — Previous Focus (COMPLETE)
+
+**Goal:** Three targeted security improvements before Phase 10 feature work. No UI changes.
+
+**What was built:**
+- `list_folder_files` path guard (`src-tauri/src/lib.rs`): `canonicalize()` + blocked-roots check before `read_dir`. System directories (`C:\Windows`, `/etc`, `/proc`, etc.) return empty results.
+- `validateWatchPath()` in `repository.ts`: rejects empty strings, UNC paths, relative paths, and system-reserved roots before writing to SQLite. `StreamSetupDialog` catches the error and displays it in the footer.
+- `src/utils/confirm.ts`: shared `confirmDestructive(message, title)` utility — uses Tauri `ask()` in desktop mode (native OS dialog), falls back to `window.confirm` in browser mode.
+- All `window.confirm` and `window.prompt` calls replaced in `GalleryCenter`, `GalleryRight`, `CenterPanel`, and `StreamSetupDialog`.
+- Watcher deletion-event fix in `autoImportPipeline.ts`: a quick `stat()` existence check before adding a queue item swallows spurious FAIL entries caused by the FS watcher re-firing when `remove()` deletes the source file.
+
+**Deferred:**
+- CSP dev/prod split — Tauri v2 has no clean mechanism to separate `ws://localhost:*` from the production CSP without breaking `npm run tauri:dev`.
+- Runtime `fs:scope` injection (Phase 10+ architectural work).
+- Removing `unsafe-inline` from `style-src`.
+
+## Phase 9 — Previous Focus (COMPLETE)
+
+**Goal:** Harden Phase 8 ingest against real-world failures; add import activity visibility; establish a unit-test foundation.
+
+**What was built:**
+- `list_folder_files` Tauri command with reveal_in_explorer-style path guard
+- Unique session ID suffix (base-36 timestamp) to prevent seed-data collision
+- `waitForStableFile` settle delay capped at 5 s per check
+- `slugify` extracted to `src/utils/slugify.ts`
+- Lazy Tauri imports in `watchedFolderService.ts` and `autoImportPipeline.ts`
+- Vitest + 12 unit tests for filename parser and session routing
+- FOLDER / ACTIVITY tab toggle on stream cards; per-stream import history with OK / SKIP / FAIL badges and amber issue count badge
+- Fallback session routing: any image file now routes (no more silent SKIP for unrecognized filenames); `deriveFallbackKey()` produces a sanitized session key from the filename stem
+- Duplicate handling: re-dropped files import with `_2`/`_3` suffix instead of being skipped
+- `ImageStreamsCenter` split into focused component files: `StreamCard`, `StreamSetupDialog`, `StreamActivityTab`, `StreamFolderTab`, `AutoPrintSetupDialog`, `streamUiHelpers`
+- `recentlyHandled` (10 s window) guards against watcher re-fire without blocking new files at the same path
 
 ## Phase 8 — Previous Focus (COMPLETE)
 

@@ -3,6 +3,7 @@ import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
 import type { Photo } from '../../data/models';
+import { confirmDestructive } from '../../utils/confirm';
 
 export function GalleryCenter() {
   const {
@@ -82,13 +83,15 @@ export function GalleryCenter() {
           className="icon-btn"
           title="Delete selected photos"
           disabled={selectedPhotoIds.length === 0}
-          onClick={() => {
+          onClick={() => void (async () => {
             if (selectedPhotoIds.length === 0) return;
             const label = selectedPhotoIds.length === 1 ? 'this photo' : `${selectedPhotoIds.length} photos`;
-            if (window.confirm(`Delete ${label} from PhotoFlow? Imported files will also be removed from managed storage.`)) {
-              void deleteSelectedPhotos();
-            }
-          }}
+            const confirmed = await confirmDestructive(
+              'Imported files will also be removed from managed storage.',
+              `Delete ${label} from PhotoFlow?`,
+            );
+            if (confirmed) void deleteSelectedPhotos();
+          })()}
         >
           <Trash2 size={13} />
         </button>
@@ -142,13 +145,15 @@ export function GalleryCenter() {
                 <button
                   className="icon-btn"
                   title={`Delete session ${s.sessionCode}`}
-                  onClick={e => {
+                  onClick={e => void (async () => {
                     e.stopPropagation();
                     const label = `${s.sessionCode} (${s.photoCount} ${s.photoCount === 1 ? 'photo' : 'photos'})`;
-                    if (window.confirm(`Delete session ${label} from PhotoFlow? Imported files in this session will also be removed from managed storage.`)) {
-                      void deleteSessionFromGallery(s.id);
-                    }
-                  }}
+                    const confirmed = await confirmDestructive(
+                      'Imported files in this session will also be removed from managed storage.',
+                      `Delete session ${label} from PhotoFlow?`,
+                    );
+                    if (confirmed) void deleteSessionFromGallery(s.id);
+                  })()}
                 >
                   <Trash2 size={13} />
                 </button>

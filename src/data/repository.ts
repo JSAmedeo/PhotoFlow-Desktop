@@ -140,6 +140,37 @@ function makeSlug(value: string): string {
   return slugify(value).replace(/^-+|-+$/g, '') || `stream-${Date.now()}`;
 }
 
+// Returns null if the path is acceptable, or an error string if it should be rejected.
+function validateWatchPath(path: string): string | null {
+  const trimmed = path.trim();
+  if (!trimmed) return 'Watch path cannot be empty.';
+
+  // Reject UNC paths (\\server\share) — network paths are not supported as watch folders.
+  if (trimmed.startsWith('\\\\') || trimmed.startsWith('//')) {
+    return 'Network (UNC) paths are not supported as watch folders. Use a local drive path.';
+  }
+
+  // Reject relative paths — watch paths must be absolute.
+  const isAbsoluteWindows = /^[A-Za-z]:[\\/]/.test(trimmed);
+  const isAbsoluteUnix = trimmed.startsWith('/');
+  if (!isAbsoluteWindows && !isAbsoluteUnix) {
+    return 'Watch path must be an absolute path (e.g. C:\\PhotoFlow Intake\\Lions or /Users/operator/intake).';
+  }
+
+  // Reject paths that are clearly system roots (no operator should watch these).
+  const blockedPrefixes = [
+    'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
+    'C:\\ProgramData', 'C:\\System Volume Information',
+    '/etc', '/sys', '/proc', '/dev', '/boot', '/bin', '/sbin',
+  ];
+  const upper = trimmed.toUpperCase();
+  if (blockedPrefixes.some(p => upper.startsWith(p.toUpperCase()))) {
+    return 'This path is a system-reserved directory and cannot be used as a watch folder.';
+  }
+
+  return null;
+}
+
 function streamStatusFor(stream: ImageStream): ImageStreamStatus {
   if (!stream.enabled) return 'disabled';
   if (!stream.watchPath) return 'idle';
@@ -161,6 +192,10 @@ export async function createImageStream(input: {
   fileNamingSeparator?: FileNamingSeparator;
   fileNamingExtension?: FileNamingExtension;
 }): Promise<ImageStream> {
+  if (input.watchPath) {
+    const pathError = validateWatchPath(input.watchPath);
+    if (pathError) throw new Error(pathError);
+  }
   const now = new Date().toISOString();
   const slug = makeSlug(input.name);
   const enabled = input.enabled ?? false;
@@ -194,6 +229,10 @@ export async function createImageStream(input: {
 }
 
 export async function updateImageStream(id: string, changes: Partial<ImageStream>): Promise<ImageStream | undefined> {
+  if (changes.watchPath) {
+    const pathError = validateWatchPath(changes.watchPath);
+    if (pathError) throw new Error(pathError);
+  }
   const store = await getMetadataStore();
   const current = await store.getImageStreamById(id);
   if (!current) return undefined;

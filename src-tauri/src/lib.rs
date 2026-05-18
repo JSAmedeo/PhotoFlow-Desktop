@@ -8,9 +8,39 @@ struct FolderFileEntry {
 #[tauri::command]
 fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
     let dir = std::path::Path::new(&path);
+
+    // Must be an existing directory.
     if !dir.is_dir() {
         return vec![];
     }
+
+    // Reject system-reserved roots. Operators may place watch folders on any
+    // drive, so we can't enforce an allow-list here the way reveal_in_explorer
+    // can. Instead, block the most dangerous system paths explicitly.
+    let canonical = match std::fs::canonicalize(dir) {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
+    let blocked_roots: &[&str] = &[
+        r"C:\Windows",
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        r"C:\ProgramData",
+        r"C:\System Volume Information",
+        "/etc",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/boot",
+        "/bin",
+        "/sbin",
+        "/usr/bin",
+        "/usr/sbin",
+    ];
+    if blocked_roots.iter().any(|root| canonical.starts_with(root)) {
+        return vec![];
+    }
+
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return vec![];
     };

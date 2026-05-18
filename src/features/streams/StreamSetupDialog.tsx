@@ -3,6 +3,7 @@ import { FolderOpen, Plus, Printer, Trash2, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import type { AutoPrintItem, FileNamingExtension, FileNamingField, FileNamingFieldType, FileNamingSeparator, ImageStream } from '../../data/models';
 import { isTauriRuntime } from '../../runtime/runtime';
+import { confirmDestructive } from '../../utils/confirm';
 import { Toggle } from './StreamCard';
 import {
   codeFromName,
@@ -63,18 +64,23 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
       setError('Fill name and a folder path.');
       return;
     }
-    if (stream) {
-      await updateImageStream(stream.id, {
-        name, code, watchPath, enabled, processingPreset, printerName,
-        autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
-        fileNamingFields, fileNamingSeparator, fileNamingExtension,
-      });
-    } else {
-      await createImageStream({
-        name, code, watchPath, enabled, processingPreset, printerName,
-        autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
-        fileNamingFields, fileNamingSeparator, fileNamingExtension,
-      });
+    try {
+      if (stream) {
+        await updateImageStream(stream.id, {
+          name, code, watchPath, enabled, processingPreset, printerName,
+          autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
+          fileNamingFields, fileNamingSeparator, fileNamingExtension,
+        });
+      } else {
+        await createImageStream({
+          name, code, watchPath, enabled, processingPreset, printerName,
+          autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
+          fileNamingFields, fileNamingSeparator, fileNamingExtension,
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save stream.');
+      return;
     }
     setName('');
     setWatchPath('');
@@ -105,15 +111,11 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
 
   const confirmDelete = async () => {
     if (!stream) return;
-    const warning = [
-      `DELETE PHOTO OP: ${stream.name}`,
-      '',
-      'This will permanently remove this Image Streams card and its photo-op configuration from PhotoFlow.',
-      'Photo files and already-imported sessions will NOT be deleted, but this stream will no longer be available as a configured inbound source.',
-      '',
-      'Type DELETE to confirm.',
-    ].join('\n');
-    if (window.prompt(warning) !== 'DELETE') return;
+    const confirmed = await confirmDestructive(
+      'This will permanently remove this Photo Op from PhotoFlow. Photo files and already-imported sessions will NOT be deleted.',
+      `Delete Photo Op: ${stream.name}`,
+    );
+    if (!confirmed) return;
     await deleteImageStream(stream.id);
     onClose();
   };

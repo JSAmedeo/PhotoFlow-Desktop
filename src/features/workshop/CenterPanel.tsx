@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Maximize2, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn, Undo2, Redo2, Crop, Upload, Check, Trash2 } from 'lucide-react';
 import { HourFilmstrip } from './HourFilmstrip';
 import { useApp } from '../../context/AppContext';
+import { confirmDestructive } from '../../utils/confirm';
 
 interface CenterPanelProps {
   visible:        boolean;
@@ -198,13 +199,15 @@ export function CenterPanel({
         <button
           className="btn ghost"
           disabled={selectedCount === 0}
-          onClick={() => {
+          onClick={() => void (async () => {
             if (selectedCount === 0) return;
             const label = selectedCount === 1 ? 'this photo' : `${selectedCount} photos`;
-            if (window.confirm(`Delete ${label} from this session? Imported files will also be removed from managed storage.`)) {
-              void deleteSelectedPhotos();
-            }
-          }}
+            const confirmed = await confirmDestructive(
+              'Imported files will also be removed from managed storage.',
+              `Delete ${label} from this session?`,
+            );
+            if (confirmed) void deleteSelectedPhotos();
+          })()}
         >
           <Trash2 size={12} /> Delete {selectedCount > 1 ? selectedCount : ''}
         </button>

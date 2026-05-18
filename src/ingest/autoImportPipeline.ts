@@ -58,6 +58,18 @@ export async function autoImportWatchedFile(
     return 'skipped';
   }
 
+  // Guard against FS watcher deletion events: after a successful import the source
+  // file is removed, which triggers another watcher event for the same path. Check
+  // the file exists before committing anything to the queue.
+  try {
+    const { stat } = await import('@tauri-apps/plugin-fs');
+    const info = await stat(candidate.path);
+    if (!info.isFile) return 'skipped';
+  } catch {
+    // File is gone — swallow silently; this is a deletion event, not a real failure.
+    return 'skipped';
+  }
+
   const queueItem = makeQueueItem(candidate, sessionId, 'queued', imageStream);
   await addImportQueueItem(queueItem);
   await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'detected', candidate.filename);

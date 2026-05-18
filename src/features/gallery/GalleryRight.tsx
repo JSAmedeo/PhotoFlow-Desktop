@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Layers, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
 import type { Photo } from '../../data/models';
+import { confirmDestructive } from '../../utils/confirm';
 
 const MAX_PREVIEW_THUMBS = 9;
 
@@ -157,24 +158,28 @@ export function GalleryRight() {
             <button
               className="btn block"
               disabled={selectedPhotoIds.length === 0}
-              onClick={() => {
+              onClick={() => void (async () => {
                 if (selectedPhotoIds.length === 0) return;
                 const label = selectedPhotoIds.length === 1 ? 'this photo' : `${selectedPhotoIds.length} photos`;
-                if (window.confirm(`Delete ${label} from this session? Imported files will also be removed from managed storage.`)) {
-                  void deleteSelectedPhotos();
-                }
-              }}
+                const confirmed = await confirmDestructive(
+                  'Imported files will also be removed from managed storage.',
+                  `Delete ${label} from this session?`,
+                );
+                if (confirmed) void deleteSelectedPhotos();
+              })()}
             >
               <Trash2 size={12} /> Delete selected
             </button>
             <button
               className="btn block"
-              onClick={() => {
+              onClick={() => void (async () => {
                 const label = `${s.sessionCode} (${s.photoCount} ${s.photoCount === 1 ? 'photo' : 'photos'})`;
-                if (window.confirm(`Delete session ${label} from PhotoFlow? Imported files in this session will also be removed from managed storage.`)) {
-                  void deleteSessionFromGallery(s.id);
-                }
-              }}
+                const confirmed = await confirmDestructive(
+                  'Imported files in this session will also be removed from managed storage.',
+                  `Delete session ${label} from PhotoFlow?`,
+                );
+                if (confirmed) void deleteSessionFromGallery(s.id);
+              })()}
             >
               <Trash2 size={12} /> Delete session
             </button>
