@@ -1,3 +1,14 @@
+mod enhance;
+
+#[tauri::command]
+async fn enhance_photo(input_path: String, output_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        enhance::enhance_image(&input_path, &output_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize)]
 struct FolderFileEntry {
     name: String,
@@ -126,7 +137,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files])
+        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files, enhance_photo])
         .run(tauri::generate_context!())
         .expect("error while running PhotoFlow Desktop");
 }

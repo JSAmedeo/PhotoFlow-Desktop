@@ -19,3 +19,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+image = "0.25"
+imageproc = "0.25"
+rayon = "1.10"
+kamadak-exif = "0.5"
