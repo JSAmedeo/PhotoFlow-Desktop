@@ -846,3 +846,5 @@ html, body, #root {
   background: var(--accent-soft);
   border-left-color: var(--accent);
 }
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

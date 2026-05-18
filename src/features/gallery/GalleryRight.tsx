@@ -1,11 +1,32 @@
-import { memo, useMemo, type MouseEvent } from 'react';
-import { ChevronLeft, ChevronRight, Layers, Trash2, Check } from 'lucide-react';
+import { memo, useMemo, useState, useEffect, type MouseEvent } from 'react';
+import { ChevronLeft, ChevronRight, Layers, Trash2, Check, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
-import type { Photo } from '../../data/models';
+import type { Photo, PhotoVersion, PhotoVersionKind } from '../../data/models';
 import { confirmDestructive } from '../../utils/confirm';
 
 const MAX_PREVIEW_THUMBS = 9;
+
+function EnhanceBadge({ photo }: { photo: Photo }) {
+  const status = photo.processingStatus;
+  const isEnhanced = status === 'done' && photo.activeVersionKind === 'enhanced';
+  const isProcessing = status === 'processing';
+  const isError = status === 'error';
+
+  if (!isEnhanced && !isProcessing && !isError) return null;
+
+  return (
+    <div style={{
+      position: 'absolute', right: 3, bottom: 3,
+      background: 'rgba(0,0,0,0.6)', borderRadius: 3,
+      padding: '1px 3px', display: 'flex', alignItems: 'center',
+    }}>
+      {isProcessing && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />}
+      {isEnhanced && <Sparkles size={10} style={{ color: 'var(--accent)' }} />}
+      {isError && <AlertTriangle size={10} style={{ color: 'var(--warn)' }} />}
+    </div>
+  );
+}
 
 const PreviewThumb = memo(function PreviewThumb({
   photo,
@@ -52,18 +73,60 @@ const PreviewThumb = memo(function PreviewThumb({
           <Check size={9} strokeWidth={3} />
         </div>
       )}
+      <EnhanceBadge photo={photo} />
     </div>
   );
 });
+
+function VersionSwitcher({
+  photo,
+  versions,
+  onSwitch,
+}: {
+  photo: Photo;
+  versions: PhotoVersion[];
+  onSwitch: (kind: PhotoVersionKind) => void;
+}) {
+  if (versions.length === 0) return null;
+  const active = photo.activeVersionKind ?? 'original';
+  return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+      {(['original', 'enhanced'] as PhotoVersionKind[])
+        .filter(kind => versions.some(v => v.kind === kind))
+        .map(kind => (
+          <button
+            key={kind}
+            className={`btn${active === kind ? ' primary' : ''}`}
+            style={{ fontSize: 10, padding: '2px 8px', textTransform: 'capitalize' }}
+            onClick={() => onSwitch(kind)}
+          >
+            {kind === 'enhanced' ? '✦ Enhanced' : 'Original'}
+          </button>
+        ))}
+    </div>
+  );
+}
 
 export function GalleryRight() {
   const {
     sessions, photos, selectedSessionId, selectedPhotoId, selectedPhotoIds,
     selectPhoto, togglePhotoSelection, selectPhotoRange, setTab, deleteSelectedPhotos, deleteSessionFromGallery,
+    getPhotoVersions, switchPhotoVersion,
   } = useApp();
   const s = sessions.find(x => x.id === selectedSessionId) ?? sessions[0];
   const selectedPhoto = photos.find(p => p.id === selectedPhotoId) ?? photos[0];
   const selectedIndex = Math.max(0, photos.findIndex(p => p.id === selectedPhoto?.id));
+
+  const [photoVersions, setPhotoVersions] = useState<PhotoVersion[]>([]);
+
+  useEffect(() => {
+    if (!selectedPhoto?.id) {
+      setPhotoVersions([]);
+      return;
+    }
+    void getPhotoVersions(selectedPhoto.id).then(setPhotoVersions);
+  }, [selectedPhoto?.id, selectedPhoto?.processingStatus, getPhotoVersions]);
+
   const previewWindow = useMemo(() => {
     if (photos.length <= MAX_PREVIEW_THUMBS) return { start: 0, photos };
     const half = Math.floor(MAX_PREVIEW_THUMBS / 2);
@@ -102,6 +165,15 @@ export function GalleryRight() {
               </span>
             </div>
           </div>
+
+          {selectedPhoto && (
+            <VersionSwitcher
+              photo={selectedPhoto}
+              versions={photoVersions}
+              onSwitch={kind => void switchPhotoVersion(selectedPhoto.id, kind)}
+            />
+          )}
+
           <div className="row gap-2" style={{ marginTop: 8 }}>
             <button className="icon-btn"><ChevronLeft size={13} /></button>
             <div className="grow" />

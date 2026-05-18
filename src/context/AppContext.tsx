@@ -6,6 +6,8 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo, u
 import type {
   Session,
   Photo,
+  PhotoVersion,
+  PhotoVersionKind,
   CaptureLocation,
   ImageStream,
   HourBucket,
@@ -42,6 +44,8 @@ import {
   updateImageStream as repoUpdateImageStream,
   deleteImageStream as repoDeleteImageStream,
   buildHourlyImportBuckets,
+  getPhotoVersions as repoGetPhotoVersions,
+  setActiveVersion as repoSetActiveVersion,
 } from '../data/repository';
 import { resolvePhotoSources } from '../storage/photoSourceResolver';
 import { isTauriRuntime } from '../runtime/runtime';
@@ -89,7 +93,9 @@ interface AppActions {
   clearImportQueue: () => void;
   chooseWatchedFolder: () => Promise<void>;
   updateWatchedFolderSettings: (changes: Partial<WatchedFolderSettings>) => Promise<void>;
-  createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
+  getPhotoVersions: (photoId: string) => Promise<PhotoVersion[]>;
+  switchPhotoVersion: (photoId: string, kind: PhotoVersionKind) => Promise<void>;
+  createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
   updateImageStream: (id: string, changes: Partial<ImageStream>) => Promise<void>;
   deleteImageStream: (id: string) => Promise<void>;
   chooseImageStreamFolder: (id: string) => Promise<void>;
@@ -197,6 +203,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     enabled: stream.enabled,
     watchPath: stream.watchPath,
     captureLocationId: stream.captureLocationId,
+    autoEnhanceEnabled: stream.autoEnhanceEnabled,
     fileRenamingEnabled: stream.fileRenamingEnabled,
     fileNamingFields: stream.fileNamingFields,
     fileNamingSeparator: stream.fileNamingSeparator,
@@ -433,7 +440,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLocations(await getLocations());
   }, []);
 
-  const createImageStream = useCallback(async (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => {
+  const createImageStream = useCallback(async (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => {
     await repoCreateImageStream({
       name: input.name.trim() || `New Stream ${imageStreams.length + 1}`,
       code: input.code,
@@ -443,6 +450,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       printerName: input.printerName,
       autoPrintEnabled: input.autoPrintEnabled,
       autoPrintItems: input.autoPrintItems,
+      autoEnhanceEnabled: input.autoEnhanceEnabled,
       fileRenamingEnabled: input.fileRenamingEnabled,
       fileNamingFields: input.fileNamingFields,
       fileNamingSeparator: input.fileNamingSeparator,
@@ -570,6 +578,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [imageStreams, refreshStreamsAndLocations, updateWatchedFolderSettings, watchedFolderSettings.watchEnabled]);
 
+  const getPhotoVersions = useCallback(async (photoId: string): Promise<PhotoVersion[]> => {
+    return repoGetPhotoVersions(photoId);
+  }, []);
+
+  const switchPhotoVersion = useCallback(async (photoId: string, kind: PhotoVersionKind): Promise<void> => {
+    await repoSetActiveVersion(photoId, kind);
+    // Optimistic in-place update — fetch version list to get the right displayUrl.
+    const versions = await repoGetPhotoVersions(photoId);
+    const target = versions.find(v => v.kind === kind);
+    if (!target) return;
+    setAllPhotos(current => current.map(p =>
+      p.id === photoId
+        ? { ...p, displayUrl: target.displayUrl, thumbnailUrl: target.displayUrl, activeVersionKind: kind }
+        : p,
+    ));
+    setPhotos(current => current.map(p =>
+      p.id === photoId
+        ? { ...p, displayUrl: target.displayUrl, thumbnailUrl: target.displayUrl, activeVersionKind: kind }
+        : p,
+    ));
+  }, []);
+
   const resetDemo = useCallback(() => {
     void (async () => {
       const freshSessions = await resetDemoData();
@@ -598,6 +628,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectSession, selectPhoto, togglePhotoSelection, selectPhotoRange, clearPhotoSelection, deleteSelectedPhotos, deleteSessionFromGallery, setTab, setHour, setLocationId, setOperatingDate, setFilter,
     toggleFavorite, toggleFlag, importPhotosToActiveSession, removeImportQueueItem, clearCompletedImports, clearImportQueue,
     chooseWatchedFolder, updateWatchedFolderSettings,
+    getPhotoVersions, switchPhotoVersion,
     createImageStream, updateImageStream, deleteImageStream, chooseImageStreamFolder, clearImageStreamFolder,
     resetDemo,
   };

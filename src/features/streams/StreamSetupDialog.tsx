@@ -23,6 +23,7 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(stream?.autoPrintEnabled ?? true);
   const [autoPrintItems, setAutoPrintItems] = useState<AutoPrintItem[]>(stream?.autoPrintItems?.length ? stream.autoPrintItems : DEFAULT_PRINT_ITEMS);
   const [enabled, setEnabled] = useState(stream?.enabled ?? true);
+  const [autoEnhanceEnabled, setAutoEnhanceEnabled] = useState(stream?.autoEnhanceEnabled ?? false);
   const [fileRenamingEnabled, setFileRenamingEnabled] = useState(stream?.fileRenamingEnabled ?? false);
   const [fileNamingFields, setFileNamingFields] = useState<FileNamingField[]>(stream?.fileNamingFields?.length ? stream.fileNamingFields : DEFAULT_NAMING_FIELDS);
   const [fileNamingSeparator, setFileNamingSeparator] = useState<FileNamingSeparator>(stream?.fileNamingSeparator ?? '_');
@@ -41,6 +42,7 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
     setAutoPrintEnabled(stream?.autoPrintEnabled ?? true);
     setAutoPrintItems(stream?.autoPrintItems?.length ? stream.autoPrintItems : DEFAULT_PRINT_ITEMS);
     setEnabled(stream?.enabled ?? true);
+    setAutoEnhanceEnabled(stream?.autoEnhanceEnabled ?? false);
     setFileRenamingEnabled(stream?.fileRenamingEnabled ?? false);
     setFileNamingFields(stream?.fileNamingFields?.length ? stream.fileNamingFields : DEFAULT_NAMING_FIELDS);
     setFileNamingSeparator(stream?.fileNamingSeparator ?? '_');
@@ -68,13 +70,13 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
       if (stream) {
         await updateImageStream(stream.id, {
           name, code, watchPath, enabled, processingPreset, printerName,
-          autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
+          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled, fileRenamingEnabled,
           fileNamingFields, fileNamingSeparator, fileNamingExtension,
         });
       } else {
         await createImageStream({
           name, code, watchPath, enabled, processingPreset, printerName,
-          autoPrintEnabled, autoPrintItems, fileRenamingEnabled,
+          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled, fileRenamingEnabled,
           fileNamingFields, fileNamingSeparator, fileNamingExtension,
         });
       }
@@ -89,6 +91,7 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
     setAutoPrintEnabled(true);
     setAutoPrintItems(DEFAULT_PRINT_ITEMS);
     setEnabled(true);
+    setAutoEnhanceEnabled(false);
     setFileRenamingEnabled(false);
     setFileNamingFields(DEFAULT_NAMING_FIELDS);
     setFileNamingSeparator('_');
@@ -148,6 +151,22 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
               <button className="btn" disabled={!isDesktop} onClick={() => void browse()}>Browse...</button>
             </div>
           </label>
+
+          <div className="file-naming-panel">
+            <div className="file-naming-head">
+              <div>
+                <span className="uppercase">Auto Enhance</span>
+                <div className="mono">Automatically improve white balance, exposure and saturation on import</div>
+              </div>
+              <Toggle on={autoEnhanceEnabled} onChange={() => setAutoEnhanceEnabled(value => !value)} />
+            </div>
+            {!autoEnhanceEnabled && (
+              <div className="file-renaming-off mono">Enhancement disabled — photos import as-is.</div>
+            )}
+            {autoEnhanceEnabled && (
+              <div className="file-renaming-off mono">JPEG and PNG files will be auto-enhanced after import. Original is preserved.</div>
+            )}
+          </div>
 
           <div className="file-naming-panel">
             <div className="file-naming-head">
