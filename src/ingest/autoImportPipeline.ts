@@ -7,6 +7,7 @@ import {
 import type { ImageStream, ImportQueueItem } from '../data/models';
 import { SUPPORTED_WATCHED_EXTENSIONS, type WatchedFileCandidate } from './watchedFolderTypes';
 import { waitForStableFile } from './fileStability';
+import * as enhancementService from './enhancementService';
 
 function extensionOf(filename: string): string {
   const dot = filename.lastIndexOf('.');
@@ -99,6 +100,12 @@ export async function autoImportWatchedFile(
     if (!imported) {
       await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
       return 'skipped';
+    }
+
+    // Fire-and-forget enhancement after the import completes. The photo is visible
+    // immediately at processingStatus: 'pending'; the tile updates when done.
+    if (imageStream?.autoEnhanceEnabled && imported.storagePath) {
+      void enhancementService.enhanceImportedPhoto(imported, imported.storagePath);
     }
 
     try {

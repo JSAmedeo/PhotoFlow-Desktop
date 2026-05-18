@@ -13,6 +13,8 @@ import type {
   ImportedFileMetadata,
   ImportQueueItem,
   Photo,
+  PhotoVersion,
+  PhotoVersionKind,
   Session,
   TabKey,
   WatchedFolderSettings,
@@ -86,7 +88,7 @@ export async function getPhotoById(id: string): Promise<Photo | undefined> {
 
 export async function updatePhotoMetadata(
   id: string,
-  changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus'>>,
+  changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus' | 'afterImageUrl' | 'displayUrl' | 'thumbnailUrl' | 'activeVersionKind' | 'autoEnhanceEnabled'>>,
 ): Promise<Photo | undefined> {
   return (await getMetadataStore()).updatePhotoMetadata(id, changes);
 }
@@ -101,6 +103,20 @@ export async function deletePhotos(photoIds: string[]): Promise<void> {
 
   const storage = getPhotoStorageService();
   await Promise.all(photos.map(photo => storage.deletePhotoSource(photo)));
+}
+
+// ----- Photo versions --------------------------------------------------------
+
+export async function addPhotoVersion(version: PhotoVersion): Promise<void> {
+  await (await getMetadataStore()).addPhotoVersion(version);
+}
+
+export async function getPhotoVersions(photoId: string): Promise<PhotoVersion[]> {
+  return (await getMetadataStore()).getPhotoVersions(photoId);
+}
+
+export async function setActiveVersion(photoId: string, kind: PhotoVersionKind): Promise<void> {
+  await (await getMetadataStore()).setActiveVersion(photoId, kind);
 }
 
 // ----- Import / ingest -------------------------------------------------------
@@ -187,6 +203,7 @@ export async function createImageStream(input: {
   printerName?: string | null;
   autoPrintEnabled?: boolean;
   autoPrintItems?: AutoPrintItem[];
+  autoEnhanceEnabled?: boolean;
   fileRenamingEnabled?: boolean;
   fileNamingFields?: FileNamingField[];
   fileNamingSeparator?: FileNamingSeparator;
@@ -217,6 +234,7 @@ export async function createImageStream(input: {
     printerName: input.printerName ?? null,
     autoPrintEnabled: input.autoPrintEnabled ?? false,
     autoPrintItems: input.autoPrintItems ?? [],
+    autoEnhanceEnabled: input.autoEnhanceEnabled ?? false,
     fileRenamingEnabled: input.fileRenamingEnabled ?? false,
     fileNamingFields: input.fileNamingFields ?? [],
     fileNamingSeparator: input.fileNamingSeparator ?? '_',
@@ -372,6 +390,7 @@ function makeImportedPhoto(
     captureLocationId?: string | null;
     importedAt: string;
     sourceFilename?: string;
+    autoEnhanceEnabled?: boolean;
   },
   routing: SessionRoutingResult,
 ): Photo {
@@ -422,6 +441,8 @@ function makeImportedPhoto(
     sizeBytes: savedPhoto.sizeBytes,
     lastModified: file.lastModified,
     importedFile: metadata,
+    autoEnhanceEnabled: source.autoEnhanceEnabled ?? false,
+    activeVersionKind: 'original',
   };
 }
 
@@ -593,7 +614,7 @@ export async function importWatchedPhotoToSession(
   file: File,
   sourcePath: string,
   queueItemId?: string,
-  imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension'>,
+  imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension' | 'autoEnhanceEnabled'>,
 ): Promise<Photo | undefined> {
   const parsed = parsePhotoFilename(file.name);
   const streamCaptureLocation: CaptureLocation | undefined = imageStream ? {
@@ -668,6 +689,7 @@ export async function importWatchedPhotoToSession(
       captureLocationId: imageStream?.captureLocationId ?? imageStream?.id ?? routing.session.captureLocationId,
       importedAt,
       sourceFilename: file.name,
+      autoEnhanceEnabled: imageStream?.autoEnhanceEnabled ?? false,
     }, routing));
     await updateImportQueueItem(queueItem.id, {
       status: 'complete',
