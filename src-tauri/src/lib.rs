@@ -4,13 +4,32 @@ mod enhance;
 async fn enhance_photo(
     input_path: String,
     output_path: String,
+    brightness: Option<f32>,
+    contrast: Option<f32>,
     saturation: Option<f32>,
     sharpen: Option<f32>,
 ) -> Result<String, String> {
+    let br  = brightness.unwrap_or(0.0);
+    let co  = contrast.unwrap_or(0.0);
     let sat = saturation.unwrap_or(1.08);
     let sh  = sharpen.unwrap_or(0.25);
     tauri::async_runtime::spawn_blocking(move || {
-        enhance::enhance_image(&input_path, &output_path, sat, sh).map_err(|e| e.to_string())
+        enhance::enhance_image(&input_path, &output_path, br, co, sat, sh).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn apply_photo_adjustments(
+    input_path: String,
+    brightness: f32,
+    contrast: f32,
+    saturation: f32,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        enhance::apply_adjustments(&input_path, &input_path, brightness, contrast, saturation)
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -144,7 +163,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files, enhance_photo])
+        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files, enhance_photo, apply_photo_adjustments])
         .run(tauri::generate_context!())
         .expect("error while running PhotoFlow Desktop");
 }

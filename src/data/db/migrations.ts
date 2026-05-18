@@ -153,4 +153,12 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE image_streams ADD COLUMN enhance_sharpen REAL DEFAULT 0.25',
     ],
   },
+  {
+    id: 11,
+    name: 'stream_enhance_tonal',
+    statements: [
+      'ALTER TABLE image_streams ADD COLUMN enhance_brightness REAL DEFAULT 0',
+      'ALTER TABLE image_streams ADD COLUMN enhance_contrast REAL DEFAULT 0',
+    ],
+  },
 ];

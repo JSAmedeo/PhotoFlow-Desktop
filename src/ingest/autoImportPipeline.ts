@@ -106,6 +106,8 @@ export async function autoImportWatchedFile(
     // immediately at processingStatus: 'pending'; the tile updates when done.
     if (imageStream?.autoEnhanceEnabled && imported.storagePath) {
       void enhancementService.enhanceImportedPhoto(imported, imported.storagePath, {
+        brightness: imageStream.enhanceBrightness,
+        contrast: imageStream.enhanceContrast,
         saturation: imageStream.enhanceSaturation,
         sharpen: imageStream.enhanceSharpen,
       });

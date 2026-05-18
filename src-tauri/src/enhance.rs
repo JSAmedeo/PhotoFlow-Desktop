@@ -100,6 +100,29 @@ fn saturation_boost_by(img: RgbImage, factor: f32) -> RgbImage {
     ImageBuffer::from_raw(width, height, out).expect("saturation buffer size unchanged")
 }
 
+// ── Tonal adjustments (brightness + contrast) ────────────────────────────────
+// Used by both the import pipeline and the workshop save-changes command.
+// brightness: offset as a fraction of full scale, e.g. 0.15 = +15%
+// contrast:   scale around midpoint 128, e.g. 0.20 = +20% contrast
+
+fn apply_brightness_contrast(img: RgbImage, brightness: f32, contrast: f32) -> RgbImage {
+    if brightness.abs() < 0.001 && contrast.abs() < 0.001 {
+        return img;
+    }
+    let (width, height) = img.dimensions();
+    let mut out = img.into_raw();
+    let b_add = brightness * 255.0;
+    let c_factor = 1.0 + contrast;
+    out.par_chunks_mut(3).for_each(|chunk| {
+        for ch in chunk.iter_mut() {
+            let v = *ch as f32;
+            let v = (v - 128.0) * c_factor + 128.0 + b_add;
+            *ch = v.clamp(0.0, 255.0) as u8;
+        }
+    });
+    ImageBuffer::from_raw(width, height, out).expect("tonal buffer size unchanged")
+}
+
 // ── Step 2: Gentle unsharp mask (parallel separable gaussian blur) ───────────
 // Replaces imageproc::gaussian_blur_f32 which is single-threaded.
 // Two-pass separable convolution: horizontal (rayon over rows) then vertical
@@ -198,6 +221,8 @@ fn unsharp_mask(img: RgbImage, sigma: f32, amount: f32) -> RgbImage {
 pub fn enhance_image(
     input_path: &str,
     output_path: &str,
+    brightness: f32,
+    contrast: f32,
     saturation: f32,
     sharpen: f32,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -215,14 +240,17 @@ pub fn enhance_image(
     let img = apply_exif_orientation(img, orientation);
     let rgb = img.to_rgb8();
 
-    // Step 1: global saturation lift (caller-controlled, default 1.08).
+    // Step 1: brightness + contrast.
+    let rgb = apply_brightness_contrast(rgb, brightness, contrast);
+
+    // Step 2: global saturation lift (caller-controlled, default 1.08).
     let rgb = if (saturation - 1.0).abs() > 0.001 {
         saturation_boost_by(rgb, saturation)
     } else {
         rgb
     };
 
-    // Step 2: unsharp mask (sigma=1.0, amount controlled by caller, default 0.25).
+    // Step 3: unsharp mask (sigma=1.0, amount controlled by caller, default 0.25).
     let rgb = if sharpen > 0.001 {
         unsharp_mask(rgb, 1.0, sharpen)
     } else {
@@ -230,6 +258,35 @@ pub fn enhance_image(
     };
 
     // Encode at JPEG quality 92.
+    let dyn_img = DynamicImage::ImageRgb8(rgb);
+    let mut out_file = std::fs::File::create(output_path)?;
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out_file, 92);
+    encoder.encode_image(&dyn_img)?;
+
+    Ok(output_path.to_string())
+}
+
+/// Bake workshop slider adjustments into an existing image file.
+/// brightness/contrast/saturation are in the same -50..+50 range as the UI sliders
+/// (divided by 100 internally). Output overwrites input when paths are identical.
+pub fn apply_adjustments(
+    input_path: &str,
+    output_path: &str,
+    brightness: f32,
+    contrast: f32,
+    saturation: f32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let img = image::open(input_path)?;
+    let rgb = img.to_rgb8();
+
+    let rgb = apply_brightness_contrast(rgb, brightness / 100.0, contrast / 100.0);
+    let sat_factor = 1.0 + saturation / 100.0;
+    let rgb = if (sat_factor - 1.0).abs() > 0.001 {
+        saturation_boost_by(rgb, sat_factor)
+    } else {
+        rgb
+    };
+
     let dyn_img = DynamicImage::ImageRgb8(rgb);
     let mut out_file = std::fs::File::create(output_path)?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out_file, 92);

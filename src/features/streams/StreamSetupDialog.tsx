@@ -24,6 +24,8 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
   const [autoPrintItems, setAutoPrintItems] = useState<AutoPrintItem[]>(stream?.autoPrintItems?.length ? stream.autoPrintItems : DEFAULT_PRINT_ITEMS);
   const [enabled, setEnabled] = useState(stream?.enabled ?? true);
   const [autoEnhanceEnabled, setAutoEnhanceEnabled] = useState(stream?.autoEnhanceEnabled ?? false);
+  const [enhanceBrightness, setEnhanceBrightness] = useState(stream?.enhanceBrightness ?? 0);
+  const [enhanceContrast, setEnhanceContrast] = useState(stream?.enhanceContrast ?? 0);
   const [enhanceSaturation, setEnhanceSaturation] = useState(stream?.enhanceSaturation ?? 1.08);
   const [enhanceSharpen, setEnhanceSharpen] = useState(stream?.enhanceSharpen ?? 0.25);
   const [fileRenamingEnabled, setFileRenamingEnabled] = useState(stream?.fileRenamingEnabled ?? false);
@@ -45,6 +47,8 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
     setAutoPrintItems(stream?.autoPrintItems?.length ? stream.autoPrintItems : DEFAULT_PRINT_ITEMS);
     setEnabled(stream?.enabled ?? true);
     setAutoEnhanceEnabled(stream?.autoEnhanceEnabled ?? false);
+    setEnhanceBrightness(stream?.enhanceBrightness ?? 0);
+    setEnhanceContrast(stream?.enhanceContrast ?? 0);
     setEnhanceSaturation(stream?.enhanceSaturation ?? 1.08);
     setEnhanceSharpen(stream?.enhanceSharpen ?? 0.25);
     setFileRenamingEnabled(stream?.fileRenamingEnabled ?? false);
@@ -74,13 +78,15 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
       if (stream) {
         await updateImageStream(stream.id, {
           name, code, watchPath, enabled, processingPreset, printerName,
-          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled, enhanceSaturation, enhanceSharpen,
+          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled,
+          enhanceBrightness, enhanceContrast, enhanceSaturation, enhanceSharpen,
           fileRenamingEnabled, fileNamingFields, fileNamingSeparator, fileNamingExtension,
         });
       } else {
         await createImageStream({
           name, code, watchPath, enabled, processingPreset, printerName,
-          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled, enhanceSaturation, enhanceSharpen,
+          autoPrintEnabled, autoPrintItems, autoEnhanceEnabled,
+          enhanceBrightness, enhanceContrast, enhanceSaturation, enhanceSharpen,
           fileRenamingEnabled, fileNamingFields, fileNamingSeparator, fileNamingExtension,
         });
       }
@@ -169,30 +175,25 @@ export function StreamSetupDialog({ open, stream, onClose }: { open: boolean; st
             )}
             {autoEnhanceEnabled && (
               <div className="col" style={{ gap: 10, padding: '4px 0' }}>
-                <div className="col" style={{ gap: 4 }}>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="mono" style={{ fontSize: 11 }}>Saturation</span>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--accent)' }}>{Math.round((enhanceSaturation - 1) * 100)}%</span>
+                {([
+                  { label: 'Brightness', value: enhanceBrightness, set: setEnhanceBrightness, min: -30, max: 30, display: (v: number) => `${v > 0 ? '+' : ''}${v}%` },
+                  { label: 'Contrast',   value: enhanceContrast,   set: setEnhanceContrast,   min: -30, max: 30, display: (v: number) => `${v > 0 ? '+' : ''}${v}%` },
+                  { label: 'Saturation', value: Math.round((enhanceSaturation - 1) * 100), set: (v: number) => setEnhanceSaturation(1 + v / 100), min: 0, max: 50, display: (v: number) => `+${v}%` },
+                  { label: 'Sharpness',  value: Math.round(enhanceSharpen * 100), set: (v: number) => setEnhanceSharpen(v / 100), min: 0, max: 80, display: (v: number) => `${v}%` },
+                ] as const).map(row => (
+                  <div key={row.label} className="col" style={{ gap: 4 }}>
+                    <div className="row" style={{ justifyContent: 'space-between' }}>
+                      <span className="mono" style={{ fontSize: 11 }}>{row.label}</span>
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--accent)' }}>{row.display(row.value)}</span>
+                    </div>
+                    <input
+                      type="range" min={row.min} max={row.max} step={1}
+                      value={row.value}
+                      onChange={e => row.set(Number(e.target.value))}
+                      style={{ width: '100%' }}
+                    />
                   </div>
-                  <input
-                    type="range" min={100} max={150} step={1}
-                    value={Math.round(enhanceSaturation * 100)}
-                    onChange={e => setEnhanceSaturation(Number(e.target.value) / 100)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div className="col" style={{ gap: 4 }}>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="mono" style={{ fontSize: 11 }}>Sharpness</span>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--accent)' }}>{Math.round(enhanceSharpen * 100)}%</span>
-                  </div>
-                  <input
-                    type="range" min={0} max={80} step={1}
-                    value={Math.round(enhanceSharpen * 100)}
-                    onChange={e => setEnhanceSharpen(Number(e.target.value) / 100)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
+                ))}
                 <div className="file-renaming-off mono">JPEG and PNG only. Original is always preserved.</div>
               </div>
             )}

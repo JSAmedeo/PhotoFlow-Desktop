@@ -153,6 +153,8 @@ type ImageStreamRow = {
   file_naming_extension?: ImageStream['fileNamingExtension'] | null;
   capture_location_id?: string | null;
   auto_enhance_enabled?: number | null;
+  enhance_brightness?: number | null;
+  enhance_contrast?: number | null;
   enhance_saturation?: number | null;
   enhance_sharpen?: number | null;
   created_at: string;
@@ -325,6 +327,8 @@ function rowToImageStream(row: ImageStreamRow): ImageStream {
     fileNamingExtension: row.file_naming_extension ?? 'JPG',
     captureLocationId: row.capture_location_id ?? null,
     autoEnhanceEnabled: row.auto_enhance_enabled === 1,
+    enhanceBrightness: row.enhance_brightness ?? 0,
+    enhanceContrast: row.enhance_contrast ?? 0,
     enhanceSaturation: row.enhance_saturation ?? 1.08,
     enhanceSharpen: row.enhance_sharpen ?? 0.25,
     createdAt: row.created_at,
@@ -525,9 +529,9 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       total_skipped, total_failed, files_per_minute, processing_preset, printer_name,
       auto_print_enabled, auto_print_items_json, file_renaming_enabled, file_naming_fields_json,
       file_naming_separator, file_naming_extension, capture_location_id, auto_enhance_enabled,
-      enhance_saturation, enhance_sharpen,
+      enhance_brightness, enhance_contrast, enhance_saturation, enhance_sharpen,
       created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       slug = excluded.slug,
@@ -554,6 +558,8 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       file_naming_extension = excluded.file_naming_extension,
       capture_location_id = excluded.capture_location_id,
       auto_enhance_enabled = excluded.auto_enhance_enabled,
+      enhance_brightness = excluded.enhance_brightness,
+      enhance_contrast = excluded.enhance_contrast,
       enhance_saturation = excluded.enhance_saturation,
       enhance_sharpen = excluded.enhance_sharpen,
       updated_at = excluded.updated_at`,
@@ -584,6 +590,8 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       stream.fileNamingExtension ?? 'JPG',
       stream.captureLocationId ?? null,
       boolToInt(stream.autoEnhanceEnabled ?? false),
+      stream.enhanceBrightness ?? 0,
+      stream.enhanceContrast ?? 0,
       stream.enhanceSaturation ?? 1.08,
       stream.enhanceSharpen ?? 0.25,
       stream.createdAt,

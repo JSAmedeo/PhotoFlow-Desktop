@@ -1,12 +1,14 @@
 import { useRef, useEffect, useState, memo, useCallback } from 'react';
 import {
   Maximize2, Paintbrush, Eraser, Wand2, Hand, ZoomOut, ZoomIn,
-  Undo2, Redo2, Crop, Upload, Check, Trash2, Columns2, Sparkles,
+  Undo2, Redo2, Crop, Upload, Check, Trash2, Columns2, Sparkles, Save,
 } from 'lucide-react';
 import { HourFilmstrip } from './HourFilmstrip';
 import { useApp } from '../../context/AppContext';
 import type { PhotoVersion } from '../../data/models';
 import { confirmDestructive } from '../../utils/confirm';
+import { isTauriRuntime } from '../../runtime/runtime';
+import { updatePhotoMetadata } from '../../data/repository';
 
 interface CenterPanelProps {
   visible:        boolean;
@@ -70,6 +72,7 @@ export function CenterPanel({
   const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
   const [saturation, setSaturation] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   // Load versions when photo changes.
   useEffect(() => {
@@ -120,6 +123,26 @@ export function CenterPanel({
     const r = wrapRef.current.getBoundingClientRect();
     setSplit(Math.max(2, Math.min(98, ((e.clientX - r.left) / r.width) * 100)));
   }, [setSplit]);
+
+  const saveAdjustments = useCallback(async () => {
+    if (!adjustmentsActive || !currentPhoto?.id || !isTauriRuntime()) return;
+    const enhancedVersion = versions.find(v => v.kind === 'enhanced');
+    const storagePath = enhancedVersion?.storagePath ?? currentPhoto?.storagePath;
+    if (!storagePath) return;
+    setSaving(true);
+    try {
+      const { invoke, convertFileSrc } = await import('@tauri-apps/api/core');
+      await invoke('apply_photo_adjustments', { inputPath: storagePath, brightness, contrast, saturation });
+      const newUrl = convertFileSrc(storagePath) + '?t=' + Date.now();
+      await updatePhotoMetadata(currentPhoto.id, { displayUrl: newUrl, afterImageUrl: newUrl });
+      await refreshPhotoInPlace(currentPhoto.id);
+      setBrightness(0);
+      setContrast(0);
+      setSaturation(0);
+    } finally {
+      setSaving(false);
+    }
+  }, [adjustmentsActive, currentPhoto, versions, brightness, contrast, saturation, refreshPhotoInPlace]);
 
   useEffect(() => {
     const m = (e: MouseEvent) => { if (draggingRef.current) updateSplit(e); };
@@ -304,7 +327,16 @@ export function CenterPanel({
           </div>
 
           <div className="grow-spacer" />
-          <div className="tool-group" style={{ borderRight: 'none', paddingRight: 0 }}>
+          <div className="tool-group" style={{ borderRight: 'none', paddingRight: 0, gap: 6 }}>
+            {adjustmentsActive && isTauriRuntime() && (
+              <button
+                className="btn primary"
+                disabled={saving}
+                onClick={() => void saveAdjustments()}
+              >
+                <Save size={12} /> {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            )}
             <button className="btn primary"><Upload size={12} /> Export</button>
           </div>
         </div>

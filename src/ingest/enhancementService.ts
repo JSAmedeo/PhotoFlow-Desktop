@@ -18,7 +18,7 @@ function enhancedOutputPath(storagePath: string): string {
 export async function enhanceImportedPhoto(
   photo: Photo,
   storagePath: string,
-  options?: { saturation?: number; sharpen?: number },
+  options?: { brightness?: number; contrast?: number; saturation?: number; sharpen?: number },
 ): Promise<void> {
   if (!isTauriRuntime()) return;
 
@@ -39,6 +39,8 @@ export async function enhanceImportedPhoto(
     await invoke<string>('enhance_photo', {
       inputPath: storagePath,
       outputPath,
+      brightness: options?.brightness ?? 0,
+      contrast: options?.contrast ?? 0,
       saturation: options?.saturation ?? 1.08,
       sharpen: options?.sharpen ?? 0.25,
     });
