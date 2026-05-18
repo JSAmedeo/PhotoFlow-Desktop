@@ -21,6 +21,10 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
         Ok(p) => p,
         Err(_) => return vec![],
     };
+    // On Windows, canonicalize() prepends a \\?\ extended path prefix.
+    // Strip it before string comparison so blocked_roots matches correctly.
+    let canonical_str = canonical.to_string_lossy();
+    let compare_path = canonical_str.strip_prefix(r"\\?\").unwrap_or(&canonical_str);
     let blocked_roots: &[&str] = &[
         r"C:\Windows",
         r"C:\Program Files",
@@ -37,7 +41,7 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
         "/usr/bin",
         "/usr/sbin",
     ];
-    if blocked_roots.iter().any(|root| canonical.starts_with(root)) {
+    if blocked_roots.iter().any(|root| compare_path.starts_with(root)) {
         return vec![];
     }
 

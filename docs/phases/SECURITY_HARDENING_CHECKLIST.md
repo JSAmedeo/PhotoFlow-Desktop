@@ -32,6 +32,7 @@ Harden three targeted security gaps before Phase 10 feature work begins. No new 
 - [x] Return `vec![]` if canonical path starts with any blocked root
 - [x] Return `vec![]` if canonicalize fails (symlink loops, permission errors)
 - [x] Leave all code after the `read_dir` call unchanged
+- [x] **Windows `\\?\` prefix fix:** `canonicalize()` on Windows returns `\\?\C:\...` extended paths. Strip the prefix with `strip_prefix(r"\\?\").unwrap_or(...)` before the `starts_with` check so blocked roots match correctly on Windows. (`reveal_in_explorer` is unaffected — it uses `PathBuf::starts_with()` which handles this transparently.)
 
 ### Fix 2 — `watchPath` validation (`src/data/repository.ts` + `StreamSetupDialog.tsx`)
 
