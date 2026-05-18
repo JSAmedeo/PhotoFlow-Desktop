@@ -314,4 +314,10 @@ export const browserMetadataStore: MetadataStore = {
     seedStore();
     return this.getSessions();
   },
+
+  // Photo versions — no-op in browser mode; enhancement requires Tauri.
+  async addPhotoVersion() { /* no-op */ },
+  async getPhotoVersions() { return []; },
+  async setActiveVersion() { /* no-op */ },
+  async deletePhotoVersionsByPhotoId() { /* no-op */ },
 };

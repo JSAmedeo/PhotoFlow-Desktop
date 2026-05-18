@@ -120,4 +120,29 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE image_streams ADD COLUMN auto_print_items_json TEXT',
     ],
   },
+  {
+    id: 8,
+    name: 'photo_versions_table',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS photo_versions (
+        id TEXT PRIMARY KEY,
+        photo_id TEXT NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        display_url TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        file_size_mb REAL NOT NULL DEFAULT 0
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_photo_versions_photo_id ON photo_versions(photo_id)',
+    ],
+  },
+  {
+    id: 9,
+    name: 'photo_auto_enhance_fields',
+    statements: [
+      'ALTER TABLE photos ADD COLUMN auto_enhance_enabled INTEGER DEFAULT 0',
+      "ALTER TABLE photos ADD COLUMN active_version_kind TEXT DEFAULT 'original'",
+      'ALTER TABLE image_streams ADD COLUMN auto_enhance_enabled INTEGER DEFAULT 0',
+    ],
+  },
 ];

@@ -10,6 +10,8 @@ import type {
   Photo,
   PhotoFlag,
   PhotoStorageKind,
+  PhotoVersion,
+  PhotoVersionKind,
   ProcessingStatus,
   Session,
   SessionStatus,
@@ -103,6 +105,18 @@ type PhotoRow = {
   image_stream_id?: string | null;
   image_stream_name?: string | null;
   imported_file_json?: string | null;
+  auto_enhance_enabled?: number | null;
+  active_version_kind?: PhotoVersionKind | null;
+};
+
+type PhotoVersionRow = {
+  id: string;
+  photo_id: string;
+  kind: PhotoVersionKind;
+  storage_path: string;
+  display_url: string;
+  created_at: string;
+  file_size_mb: number;
 };
 
 type LocationRow = {
@@ -138,6 +152,7 @@ type ImageStreamRow = {
   file_naming_separator?: ImageStream['fileNamingSeparator'] | null;
   file_naming_extension?: ImageStream['fileNamingExtension'] | null;
   capture_location_id?: string | null;
+  auto_enhance_enabled?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -254,6 +269,20 @@ function rowToPhoto(row: PhotoRow): Photo {
     sizeBytes: row.size_bytes ?? undefined,
     lastModified: row.last_modified ?? undefined,
     importedFile,
+    autoEnhanceEnabled: row.auto_enhance_enabled === 1,
+    activeVersionKind: row.active_version_kind ?? 'original',
+  };
+}
+
+function rowToPhotoVersion(row: PhotoVersionRow): PhotoVersion {
+  return {
+    id: row.id,
+    photoId: row.photo_id,
+    kind: row.kind,
+    storagePath: row.storage_path,
+    displayUrl: row.display_url,
+    createdAt: row.created_at,
+    fileSizeMb: row.file_size_mb,
   };
 }
 
@@ -293,6 +322,7 @@ function rowToImageStream(row: ImageStreamRow): ImageStream {
     fileNamingSeparator: row.file_naming_separator ?? '_',
     fileNamingExtension: row.file_naming_extension ?? 'JPG',
     captureLocationId: row.capture_location_id ?? null,
+    autoEnhanceEnabled: row.auto_enhance_enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -394,8 +424,9 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       operator_notes, enhance_version, width, height, file_size_mb, file_format, original_path,
       storage_kind, storage_path, original_filename, source_filename, session_key, sequence_number,
       sequence_label, routing_status, routing_reason, size_bytes, last_modified, source_type,
-      source_path, managed_original_path, image_stream_id, image_stream_name, imported_at, imported_file_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+      source_path, managed_original_path, image_stream_id, image_stream_name, imported_at,
+      imported_file_json, auto_enhance_enabled, active_version_kind
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
     ON CONFLICT(id) DO UPDATE SET
       session_id = excluded.session_id,
       filename = excluded.filename,
@@ -433,7 +464,9 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       image_stream_id = excluded.image_stream_id,
       image_stream_name = excluded.image_stream_name,
       imported_at = excluded.imported_at,
-      imported_file_json = excluded.imported_file_json`,
+      imported_file_json = excluded.imported_file_json,
+      auto_enhance_enabled = excluded.auto_enhance_enabled,
+      active_version_kind = excluded.active_version_kind`,
     [
       photo.id,
       photo.sessionId,
@@ -473,6 +506,8 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       photo.imageStreamName ?? null,
       photo.importedAt ?? null,
       photo.importedFile ? JSON.stringify(photo.importedFile) : null,
+      boolToInt(photo.autoEnhanceEnabled ?? false),
+      photo.activeVersionKind ?? 'original',
     ],
   );
 }
@@ -485,8 +520,9 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       last_detected_filename, last_imported_filename, total_detected, total_imported,
       total_skipped, total_failed, files_per_minute, processing_preset, printer_name,
       auto_print_enabled, auto_print_items_json, file_renaming_enabled, file_naming_fields_json,
-      file_naming_separator, file_naming_extension, capture_location_id, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      file_naming_separator, file_naming_extension, capture_location_id, auto_enhance_enabled,
+      created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       slug = excluded.slug,
@@ -512,6 +548,7 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       file_naming_separator = excluded.file_naming_separator,
       file_naming_extension = excluded.file_naming_extension,
       capture_location_id = excluded.capture_location_id,
+      auto_enhance_enabled = excluded.auto_enhance_enabled,
       updated_at = excluded.updated_at`,
     [
       stream.id,
@@ -539,6 +576,7 @@ async function upsertImageStream(stream: ImageStream): Promise<void> {
       stream.fileNamingSeparator ?? '_',
       stream.fileNamingExtension ?? 'JPG',
       stream.captureLocationId ?? null,
+      boolToInt(stream.autoEnhanceEnabled ?? false),
       stream.createdAt,
       stream.updatedAt,
     ],
@@ -733,6 +771,24 @@ export const sqliteMetadataStore: MetadataStore = {
     const photos = (await Promise.all(photoIds.map(id => this.getPhotoById(id)))).filter(isPhoto);
     const sessionIds = Array.from(new Set(photos.map(photo => photo.sessionId)));
 
+    // Best-effort cleanup of enhanced version files from disk (Tauri only).
+    try {
+      const versionRows = (await Promise.all(
+        photoIds.map(id =>
+          db.select<{ storage_path: string }[]>(
+            "SELECT storage_path FROM photo_versions WHERE photo_id = $1 AND kind = 'enhanced'",
+            [id],
+          ),
+        ),
+      )).flat();
+      if (versionRows.length > 0) {
+        const { remove } = await import('@tauri-apps/plugin-fs');
+        for (const row of versionRows) {
+          try { await remove(row.storage_path); } catch { /* best effort */ }
+        }
+      }
+    } catch { /* not in Tauri or photo_versions table not yet migrated */ }
+
     for (const photoId of photoIds) {
       await db.execute('DELETE FROM photos WHERE id = $1', [photoId]);
     }
@@ -748,6 +804,46 @@ export const sqliteMetadataStore: MetadataStore = {
         [count, new Date().toISOString(), sessionId],
       );
     }
+  },
+
+  async addPhotoVersion(version) {
+    const db = await getDatabase();
+    await db.execute(
+      `INSERT INTO photo_versions (id, photo_id, kind, storage_path, display_url, created_at, file_size_mb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT(id) DO UPDATE SET
+         storage_path = excluded.storage_path,
+         display_url = excluded.display_url`,
+      [version.id, version.photoId, version.kind, version.storagePath, version.displayUrl, version.createdAt, version.fileSizeMb],
+    );
+  },
+
+  async getPhotoVersions(photoId) {
+    const db = await getDatabase();
+    const rows = await db.select<PhotoVersionRow[]>(
+      'SELECT * FROM photo_versions WHERE photo_id = $1 ORDER BY created_at',
+      [photoId],
+    );
+    return rows.map(rowToPhotoVersion);
+  },
+
+  async setActiveVersion(photoId, kind) {
+    const photo = await this.getPhotoById(photoId);
+    if (!photo) return;
+    const versions = await this.getPhotoVersions(photoId);
+    const target = versions.find(v => v.kind === kind);
+    if (!target) return;
+    await upsertPhoto({
+      ...photo,
+      activeVersionKind: kind,
+      displayUrl: target.displayUrl,
+      thumbnailUrl: target.displayUrl,
+    });
+  },
+
+  async deletePhotoVersionsByPhotoId(photoId) {
+    const db = await getDatabase();
+    await db.execute('DELETE FROM photo_versions WHERE photo_id = $1', [photoId]);
   },
 
   async getImportQueue() {

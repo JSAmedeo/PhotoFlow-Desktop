@@ -1,6 +1,18 @@
 // Core domain types for PhotoFlow Desktop.
 // All interfaces are shaped for future Phase 3+ wiring (real files, real ingest).
 
+export type PhotoVersionKind = 'original' | 'enhanced' | 'bg-removed';
+
+export interface PhotoVersion {
+  id: string;
+  photoId: string;
+  kind: PhotoVersionKind;
+  storagePath: string;
+  displayUrl: string;
+  createdAt: string;
+  fileSizeMb: number;
+}
+
 export type ProcessingStatus = 'pending' | 'processing' | 'done' | 'warn' | 'error';
 export type PhotoFlag = 'none' | 'flagged' | 'rejected' | 'favorite';
 export type SessionStatus = 'active' | 'complete' | 'flagged' | 'archived';
@@ -65,6 +77,7 @@ export interface ImageStream {
   fileNamingSeparator?: FileNamingSeparator;
   fileNamingExtension?: FileNamingExtension;
   captureLocationId?: string | null;
+  autoEnhanceEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -124,6 +137,8 @@ export interface Photo {
   sizeBytes?: number;
   lastModified?: number;
   importedFile?: ImportedFileMetadata;
+  autoEnhanceEnabled?: boolean;
+  activeVersionKind?: PhotoVersionKind;
 }
 
 export interface ImportedFileMetadata {

@@ -4,6 +4,8 @@ import type {
   ImageStream,
   ImportQueueItem,
   Photo,
+  PhotoVersion,
+  PhotoVersionKind,
   Session,
   TabKey,
   WatchedFolderSettings,
@@ -25,10 +27,14 @@ export interface MetadataStore {
   getPhotoById(id: string): Promise<Photo | undefined>;
   updatePhotoMetadata(
     id: string,
-    changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus'>>,
+    changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus' | 'afterImageUrl' | 'displayUrl' | 'thumbnailUrl' | 'activeVersionKind' | 'autoEnhanceEnabled'>>,
   ): Promise<Photo | undefined>;
   addPhotoToSession(sessionId: string, photo: Photo): Promise<Photo>;
   deletePhotos(photoIds: string[]): Promise<void>;
+  addPhotoVersion(version: PhotoVersion): Promise<void>;
+  getPhotoVersions(photoId: string): Promise<PhotoVersion[]>;
+  setActiveVersion(photoId: string, kind: PhotoVersionKind): Promise<void>;
+  deletePhotoVersionsByPhotoId(photoId: string): Promise<void>;
   getImportQueue(): Promise<ImportQueueItem[]>;
   addImportQueueItem(item: ImportQueueItem): Promise<void>;
   updateImportQueueItem(itemId: string, changes: Partial<ImportQueueItem>): Promise<void>;
