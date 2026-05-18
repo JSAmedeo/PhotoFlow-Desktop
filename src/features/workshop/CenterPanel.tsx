@@ -67,6 +67,9 @@ export function CenterPanel({
   const [imgLoaded, setImgLoaded] = useState(false);
   const [compareMode, setCompareMode] = useState(true);
   const [versions, setVersions] = useState<PhotoVersion[]>([]);
+  const [brightness, setBrightness] = useState(0);
+  const [contrast, setContrast] = useState(0);
+  const [saturation, setSaturation] = useState(0);
 
   // Load versions when photo changes.
   useEffect(() => {
@@ -98,12 +101,19 @@ export function CenterPanel({
   const beforeUrl = currentPhoto?.beforeImageUrl ?? currentPhoto?.displayUrl ?? '/demo-assets/before.jpg';
   const afterUrl  = currentPhoto?.afterImageUrl  ?? beforeUrl;
 
-  const beforeLabel = 'ORIGINAL';
-  const afterLabel  = hasEnhanced
+  const adjustmentsActive = brightness !== 0 || contrast !== 0 || saturation !== 0;
+  const imgFilter = adjustmentsActive
+    ? `brightness(${1 + brightness / 100}) contrast(${1 + contrast / 100}) saturate(${1 + saturation / 100})`
+    : undefined;
+
+  // Pane layout: enhanced on the LEFT (before pane), original on the RIGHT (after pane).
+  // At split=95 the handle sits near the right edge, showing mostly enhanced by default.
+  const leftLabel  = hasEnhanced
     ? 'ENHANCED ✦'
     : isProcessing
       ? 'ENHANCING…'
       : 'ORIGINAL';
+  const rightLabel = 'ORIGINAL';
 
   const updateSplit = useCallback((e: MouseEvent) => {
     if (!wrapRef.current) return;
@@ -151,23 +161,14 @@ export function CenterPanel({
           >
             {compareMode && canCompare ? (
               <>
-                {/* Before — always original */}
+                {/* Before pane — shows ENHANCED (left side, revealed up to split%) */}
                 <div className="pane before">
-                  <img
-                    src={beforeUrl}
-                    alt="Before"
-                    onLoad={() => setImgLoaded(true)}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </div>
-
-                {/* After — enhanced when available */}
-                <div className="pane after">
                   <div className="checker" style={{ position: 'absolute', inset: 0 }} />
                   <img
                     src={afterUrl}
-                    alt="After"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    alt="Enhanced"
+                    onLoad={() => setImgLoaded(true)}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
                   />
                   {isProcessing && !hasEnhanced && (
                     <div style={{
@@ -177,6 +178,15 @@ export function CenterPanel({
                       <Sparkles size={22} style={{ color: 'var(--accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
                     </div>
                   )}
+                </div>
+
+                {/* After pane — shows ORIGINAL (right side, visible from split% onward) */}
+                <div className="pane after">
+                  <img
+                    src={beforeUrl}
+                    alt="Original"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                  />
                 </div>
 
                 {/* Slider */}
@@ -193,8 +203,8 @@ export function CenterPanel({
                   </svg>
                 </div>
 
-                <div className="compare-label l mono">{beforeLabel}</div>
-                <div className="compare-label r mono">{afterLabel}</div>
+                <div className="compare-label l mono">{leftLabel}</div>
+                <div className="compare-label r mono">{rightLabel}</div>
               </>
             ) : (
               /* Single view — shows the active version (displayUrl) */
@@ -203,7 +213,7 @@ export function CenterPanel({
                   src={currentPhoto?.displayUrl ?? beforeUrl}
                   alt="Photo"
                   onLoad={() => setImgLoaded(true)}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
                 />
                 {hasEnhanced && (
                   <div className="compare-label r mono" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -256,6 +266,43 @@ export function CenterPanel({
               <Columns2 size={14} />
             </button>
           </div>
+
+          {/* Inline adjustments */}
+          <div className="tool-group" style={{ gap: 10, paddingLeft: 10 }}>
+            {([
+              { label: 'B', title: 'Brightness', value: brightness, set: setBrightness },
+              { label: 'C', title: 'Contrast',   value: contrast,   set: setContrast   },
+              { label: 'S', title: 'Saturation',  value: saturation, set: setSaturation },
+            ] as const).map(adj => (
+              <div key={adj.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  title={adj.title}
+                  style={{ fontSize: 10, fontFamily: 'JetBrains Mono', color: adj.value !== 0 ? 'var(--accent)' : 'var(--ink-3)', minWidth: 10, textAlign: 'center' }}
+                >
+                  {adj.label}
+                </span>
+                <input
+                  type="range"
+                  min={-50} max={50} step={1}
+                  value={adj.value}
+                  title={`${adj.title}: ${adj.value > 0 ? '+' : ''}${adj.value}`}
+                  onChange={e => adj.set(Number(e.target.value))}
+                  style={{ width: 64, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+              </div>
+            ))}
+            {adjustmentsActive && (
+              <button
+                className="icon-btn"
+                title="Reset adjustments"
+                onClick={() => { setBrightness(0); setContrast(0); setSaturation(0); }}
+                style={{ fontSize: 10, padding: '0 4px' }}
+              >
+                ↺
+              </button>
+            )}
+          </div>
+
           <div className="grow-spacer" />
           <div className="tool-group" style={{ borderRight: 'none', paddingRight: 0 }}>
             <button className="btn primary"><Upload size={12} /> Export</button>

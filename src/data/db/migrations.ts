@@ -145,4 +145,12 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE image_streams ADD COLUMN auto_enhance_enabled INTEGER DEFAULT 0',
     ],
   },
+  {
+    id: 10,
+    name: 'stream_enhance_params',
+    statements: [
+      'ALTER TABLE image_streams ADD COLUMN enhance_saturation REAL DEFAULT 1.08',
+      'ALTER TABLE image_streams ADD COLUMN enhance_sharpen REAL DEFAULT 0.25',
+    ],
+  },
 ];

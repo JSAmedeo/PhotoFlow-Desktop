@@ -78,6 +78,8 @@ export interface ImageStream {
   fileNamingExtension?: FileNamingExtension;
   captureLocationId?: string | null;
   autoEnhanceEnabled?: boolean;
+  enhanceSaturation?: number;
+  enhanceSharpen?: number;
   createdAt: string;
   updatedAt: string;
 }

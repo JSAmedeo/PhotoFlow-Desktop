@@ -96,7 +96,7 @@ interface AppActions {
   refreshPhotoInPlace: (photoId: string) => Promise<void>;
   getPhotoVersions: (photoId: string) => Promise<PhotoVersion[]>;
   switchPhotoVersion: (photoId: string, kind: PhotoVersionKind) => Promise<void>;
-  createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
+  createImageStream: (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; enhanceSaturation?: number; enhanceSharpen?: number; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => Promise<void>;
   updateImageStream: (id: string, changes: Partial<ImageStream>) => Promise<void>;
   deleteImageStream: (id: string) => Promise<void>;
   chooseImageStreamFolder: (id: string) => Promise<void>;
@@ -441,7 +441,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLocations(await getLocations());
   }, []);
 
-  const createImageStream = useCallback(async (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => {
+  const createImageStream = useCallback(async (input: { name: string; code?: string; watchPath?: string | null; enabled?: boolean; processingPreset?: string | null; printerName?: string | null; autoPrintEnabled?: boolean; autoPrintItems?: AutoPrintItem[]; autoEnhanceEnabled?: boolean; enhanceSaturation?: number; enhanceSharpen?: number; fileRenamingEnabled?: boolean; fileNamingFields?: FileNamingField[]; fileNamingSeparator?: FileNamingSeparator; fileNamingExtension?: FileNamingExtension }) => {
     await repoCreateImageStream({
       name: input.name.trim() || `New Stream ${imageStreams.length + 1}`,
       code: input.code,
@@ -452,6 +452,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       autoPrintEnabled: input.autoPrintEnabled,
       autoPrintItems: input.autoPrintItems,
       autoEnhanceEnabled: input.autoEnhanceEnabled,
+      enhanceSaturation: input.enhanceSaturation,
+      enhanceSharpen: input.enhanceSharpen,
       fileRenamingEnabled: input.fileRenamingEnabled,
       fileNamingFields: input.fileNamingFields,
       fileNamingSeparator: input.fileNamingSeparator,

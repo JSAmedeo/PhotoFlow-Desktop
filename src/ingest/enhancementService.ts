@@ -15,7 +15,11 @@ function enhancedOutputPath(storagePath: string): string {
   return `${stem}_enhanced.jpg`;
 }
 
-export async function enhanceImportedPhoto(photo: Photo, storagePath: string): Promise<void> {
+export async function enhanceImportedPhoto(
+  photo: Photo,
+  storagePath: string,
+  options?: { saturation?: number; sharpen?: number },
+): Promise<void> {
   if (!isTauriRuntime()) return;
 
   const ext = extensionOf(photo.filename);
@@ -32,7 +36,12 @@ export async function enhanceImportedPhoto(photo: Photo, storagePath: string): P
     const { invoke } = await import('@tauri-apps/api/core');
     const { convertFileSrc } = await import('@tauri-apps/api/core');
 
-    await invoke<string>('enhance_photo', { inputPath: storagePath, outputPath });
+    await invoke<string>('enhance_photo', {
+      inputPath: storagePath,
+      outputPath,
+      saturation: options?.saturation ?? 1.08,
+      sharpen: options?.sharpen ?? 0.25,
+    });
 
     const enhancedDisplayUrl = convertFileSrc(outputPath);
     const originalDisplayUrl = photo.displayUrl;

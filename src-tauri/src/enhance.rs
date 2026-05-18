@@ -1,5 +1,4 @@
 use image::{DynamicImage, ImageBuffer, RgbImage};
-use imageproc::filter::gaussian_blur_f32;
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -83,7 +82,7 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
     }
 }
 
-fn saturation_boost(img: RgbImage) -> RgbImage {
+fn saturation_boost_by(img: RgbImage, factor: f32) -> RgbImage {
     let (width, height) = img.dimensions();
     let mut out = img.into_raw();
     out.par_chunks_mut(3).for_each(|chunk| {
@@ -92,7 +91,7 @@ fn saturation_boost(img: RgbImage) -> RgbImage {
         let b = chunk[2] as f32 / 255.0;
 
         let (h, s, v) = rgb_to_hsv(r, g, b);
-        let (nr, ng, nb) = hsv_to_rgb(h, (s * 1.08).min(1.0), v);
+        let (nr, ng, nb) = hsv_to_rgb(h, (s * factor).min(1.0), v);
 
         chunk[0] = (nr * 255.0).clamp(0.0, 255.0) as u8;
         chunk[1] = (ng * 255.0).clamp(0.0, 255.0) as u8;
@@ -101,10 +100,82 @@ fn saturation_boost(img: RgbImage) -> RgbImage {
     ImageBuffer::from_raw(width, height, out).expect("saturation buffer size unchanged")
 }
 
-// ── Step 2: Gentle unsharp mask ───────────────────────────────────────────────
+// ── Step 2: Gentle unsharp mask (parallel separable gaussian blur) ───────────
+// Replaces imageproc::gaussian_blur_f32 which is single-threaded.
+// Two-pass separable convolution: horizontal (rayon over rows) then vertical
+// (rayon over columns). For sigma=1.0 the kernel is 7 taps, so the per-pixel
+// cost is small and the parallelism across rows/columns is the main win.
+
+fn gaussian_kernel(sigma: f32) -> Vec<f32> {
+    let radius = (3.0 * sigma).ceil() as i32;
+    let mut k: Vec<f32> = (-radius..=radius)
+        .map(|x| (-(x * x) as f32 / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let sum: f32 = k.iter().sum();
+    k.iter_mut().for_each(|v| *v /= sum);
+    k
+}
+
+fn blur_horizontal(src: &[u8], width: usize, _height: usize, kernel: &[f32]) -> Vec<u8> {
+    let radius = kernel.len() / 2;
+    let mut dst = vec![0u8; src.len()];
+    dst.par_chunks_mut(width * 3)
+        .enumerate()
+        .for_each(|(y, row_dst)| {
+            for x in 0..width {
+                for c in 0..3 {
+                    let mut acc = 0.0f32;
+                    for (ki, &kv) in kernel.iter().enumerate() {
+                        let sx = (x as i64 + ki as i64 - radius as i64)
+                            .clamp(0, width as i64 - 1) as usize;
+                        acc += src[y * width * 3 + sx * 3 + c] as f32 * kv;
+                    }
+                    row_dst[x * 3 + c] = acc.clamp(0.0, 255.0) as u8;
+                }
+            }
+        });
+    dst
+}
+
+fn blur_vertical(src: &[u8], width: usize, height: usize, kernel: &[f32]) -> Vec<u8> {
+    let radius = kernel.len() / 2;
+    let mut dst = vec![0u8; src.len()];
+    // Parallelise over columns so each thread works an independent column stripe.
+    let cols_per_chunk = (width / rayon::current_num_threads()).max(1);
+    dst.par_chunks_mut(cols_per_chunk * 3)
+        .enumerate()
+        .for_each(|(chunk_idx, col_chunk)| {
+            let x_start = chunk_idx * cols_per_chunk;
+            let x_end = (x_start + cols_per_chunk).min(width);
+            for x in x_start..x_end {
+                let lx = x - x_start;
+                for y in 0..height {
+                    for c in 0..3 {
+                        let mut acc = 0.0f32;
+                        for (ki, &kv) in kernel.iter().enumerate() {
+                            let sy = (y as i64 + ki as i64 - radius as i64)
+                                .clamp(0, height as i64 - 1) as usize;
+                            acc += src[sy * width * 3 + x * 3 + c] as f32 * kv;
+                        }
+                        col_chunk[lx * 3 + y * cols_per_chunk * 3 + c] = acc.clamp(0.0, 255.0) as u8;
+                    }
+                }
+            }
+        });
+    dst
+}
+
+fn parallel_gaussian_blur(img: &RgbImage, sigma: f32) -> RgbImage {
+    let (width, height) = img.dimensions();
+    let (w, h) = (width as usize, height as usize);
+    let kernel = gaussian_kernel(sigma);
+    let h_pass = blur_horizontal(img.as_raw(), w, h, &kernel);
+    let v_pass = blur_vertical(&h_pass, w, h, &kernel);
+    ImageBuffer::from_raw(width, height, v_pass).expect("blur buffer size unchanged")
+}
 
 fn unsharp_mask(img: RgbImage, sigma: f32, amount: f32) -> RgbImage {
-    let blurred = gaussian_blur_f32(&img, sigma);
+    let blurred = parallel_gaussian_blur(&img, sigma);
     let (width, height) = img.dimensions();
     let orig = img.into_raw();
     let blur = blurred.into_raw();
@@ -127,6 +198,8 @@ fn unsharp_mask(img: RgbImage, sigma: f32, amount: f32) -> RgbImage {
 pub fn enhance_image(
     input_path: &str,
     output_path: &str,
+    saturation: f32,
+    sharpen: f32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let ext = Path::new(input_path)
         .extension()
@@ -142,11 +215,19 @@ pub fn enhance_image(
     let img = apply_exif_orientation(img, orientation);
     let rgb = img.to_rgb8();
 
-    // Step 1: gentle global saturation lift (1.08×, uniform, no channel imbalance).
-    let rgb = saturation_boost(rgb);
+    // Step 1: global saturation lift (caller-controlled, default 1.08).
+    let rgb = if (saturation - 1.0).abs() > 0.001 {
+        saturation_boost_by(rgb, saturation)
+    } else {
+        rgb
+    };
 
-    // Step 2: gentle unsharp mask (sigma=1.0, amount=0.25).
-    let rgb = unsharp_mask(rgb, 1.0, 0.25);
+    // Step 2: unsharp mask (sigma=1.0, amount controlled by caller, default 0.25).
+    let rgb = if sharpen > 0.001 {
+        unsharp_mask(rgb, 1.0, sharpen)
+    } else {
+        rgb
+    };
 
     // Encode at JPEG quality 92.
     let dyn_img = DynamicImage::ImageRgb8(rgb);

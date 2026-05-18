@@ -204,6 +204,8 @@ export async function createImageStream(input: {
   autoPrintEnabled?: boolean;
   autoPrintItems?: AutoPrintItem[];
   autoEnhanceEnabled?: boolean;
+  enhanceSaturation?: number;
+  enhanceSharpen?: number;
   fileRenamingEnabled?: boolean;
   fileNamingFields?: FileNamingField[];
   fileNamingSeparator?: FileNamingSeparator;
@@ -235,6 +237,8 @@ export async function createImageStream(input: {
     autoPrintEnabled: input.autoPrintEnabled ?? false,
     autoPrintItems: input.autoPrintItems ?? [],
     autoEnhanceEnabled: input.autoEnhanceEnabled ?? false,
+    enhanceSaturation: input.enhanceSaturation ?? 1.08,
+    enhanceSharpen: input.enhanceSharpen ?? 0.25,
     fileRenamingEnabled: input.fileRenamingEnabled ?? false,
     fileNamingFields: input.fileNamingFields ?? [],
     fileNamingSeparator: input.fileNamingSeparator ?? '_',
@@ -614,7 +618,7 @@ export async function importWatchedPhotoToSession(
   file: File,
   sourcePath: string,
   queueItemId?: string,
-  imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension' | 'autoEnhanceEnabled'>,
+  imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension' | 'autoEnhanceEnabled' | 'enhanceSaturation' | 'enhanceSharpen'>,
 ): Promise<Photo | undefined> {
   const parsed = parsePhotoFilename(file.name);
   const streamCaptureLocation: CaptureLocation | undefined = imageStream ? {

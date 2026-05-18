@@ -105,7 +105,10 @@ export async function autoImportWatchedFile(
     // Fire-and-forget enhancement after the import completes. The photo is visible
     // immediately at processingStatus: 'pending'; the tile updates when done.
     if (imageStream?.autoEnhanceEnabled && imported.storagePath) {
-      void enhancementService.enhanceImportedPhoto(imported, imported.storagePath);
+      void enhancementService.enhanceImportedPhoto(imported, imported.storagePath, {
+        saturation: imageStream.enhanceSaturation,
+        sharpen: imageStream.enhanceSharpen,
+      });
     }
 
     try {

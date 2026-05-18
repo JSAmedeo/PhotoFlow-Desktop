@@ -1,9 +1,16 @@
 mod enhance;
 
 #[tauri::command]
-async fn enhance_photo(input_path: String, output_path: String) -> Result<String, String> {
+async fn enhance_photo(
+    input_path: String,
+    output_path: String,
+    saturation: Option<f32>,
+    sharpen: Option<f32>,
+) -> Result<String, String> {
+    let sat = saturation.unwrap_or(1.08);
+    let sh  = sharpen.unwrap_or(0.25);
     tauri::async_runtime::spawn_blocking(move || {
-        enhance::enhance_image(&input_path, &output_path).map_err(|e| e.to_string())
+        enhance::enhance_image(&input_path, &output_path, sat, sh).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
