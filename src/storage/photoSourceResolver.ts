@@ -12,15 +12,17 @@ export async function resolvePhotoSources(photos: Photo[]): Promise<Photo[]> {
   }
 
   return Promise.all(photos.map(async photo => {
-    const resolved = await resolvePhotoSource(photo);
-
     if (photo.storageKind === 'tauri-managed-file') {
+      // storagePath is always the original file. beforeImageUrl must always point to it.
+      // displayUrl/afterImageUrl/thumbnailUrl may already be correct Tauri asset URLs
+      // (e.g. enhanced version path written by enhancementService) — trust them if set.
+      const originalUrl = await resolvePhotoSource(photo);
       return {
         ...photo,
-        thumbnailUrl: resolved,
-        displayUrl: resolved,
-        beforeImageUrl: resolved,
-        afterImageUrl: resolved,
+        beforeImageUrl: originalUrl,
+        thumbnailUrl: photo.thumbnailUrl || originalUrl,
+        displayUrl: photo.displayUrl || originalUrl,
+        afterImageUrl: photo.afterImageUrl || originalUrl,
       };
     }
 
