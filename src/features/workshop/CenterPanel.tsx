@@ -109,13 +109,16 @@ export function CenterPanel({
     ? `brightness(${1 + brightness / 100}) contrast(${1 + contrast / 100}) saturate(${1 + saturation / 100})`
     : undefined;
 
-  // Pane layout: enhanced on the LEFT (before pane), original on the RIGHT (after pane).
-  // At split=95 the handle sits near the right edge, showing mostly enhanced by default.
+  // Left pane: working version (enhanced if available, else current) + CSS adjustments.
+  // Right pane: raw original, no filter — always a clean reference.
+  // Compare is always available so the slider works for adjustment preview too.
   const leftLabel  = hasEnhanced
     ? 'ENHANCED ✦'
     : isProcessing
       ? 'ENHANCING…'
-      : 'ORIGINAL';
+      : adjustmentsActive
+        ? 'ADJUSTED'
+        : 'ORIGINAL';
   const rightLabel = 'ORIGINAL';
 
   const updateSplit = useCallback((e: MouseEvent) => {
@@ -168,8 +171,6 @@ export function CenterPanel({
   if (!visible) return <div className="panel center" />;
   if (!session) return <div className="panel center" />;
 
-  const canCompare = hasEnhanced || isProcessing;
-
   return (
     <div className="panel center">
       <HourFilmstrip />
@@ -182,7 +183,7 @@ export function CenterPanel({
             ref={wrapRef}
             style={{ width: '100%', height: '100%', maxWidth: 1080, maxHeight: 620, aspectRatio: '1080 / 620', '--split': `${split}%` } as React.CSSProperties}
           >
-            {compareMode && canCompare ? (
+            {compareMode ? (
               <>
                 {/* Before pane — shows ENHANCED (left side, revealed up to split%) */}
                 <div className="pane before">
@@ -203,12 +204,12 @@ export function CenterPanel({
                   )}
                 </div>
 
-                {/* After pane — shows ORIGINAL (right side, visible from split% onward) */}
+                {/* After pane — shows ORIGINAL (right side, visible from split% onward) — no filter, always raw */}
                 <div className="pane after">
                   <img
                     src={beforeUrl}
                     alt="Original"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 </div>
 
@@ -282,8 +283,7 @@ export function CenterPanel({
           <div className="tool-group">
             <button
               className={`icon-btn ${compareMode ? 'active' : ''}`}
-              title={compareMode ? 'Hide compare' : 'Compare Original / Enhanced'}
-              disabled={!canCompare}
+              title={compareMode ? 'Hide compare' : 'Compare'}
               onClick={() => setCompareMode(m => !m)}
             >
               <Columns2 size={14} />
