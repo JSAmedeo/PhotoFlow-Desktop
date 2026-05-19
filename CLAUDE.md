@@ -60,7 +60,8 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 8 | Image Streams Foundation | **COMPLETE** |
 | 9 | Stream ingest hardening + activity visibility | **COMPLETE** |
 | — | Security hardening (pre-Phase 10) | **COMPLETE** |
-| 10 | (TBD) | **NEXT** |
+| 10 | Auto image enhancement pipeline | **COMPLETE (pending merge)** |
+| 11 | (TBD) | **NEXT** |
 
 ## Security Hardening — Previous Focus (COMPLETE)
 
@@ -76,6 +77,32 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 **Deferred:**
 - CSP dev/prod split — Tauri v2 has no clean mechanism to separate `ws://localhost:*` from the production CSP without breaking `npm run tauri:dev`.
 - Runtime `fs:scope` injection (Phase 10+ architectural work).
+- Removing `unsafe-inline` from `style-src`.
+
+## Phase 10 — Previous Focus (COMPLETE, pending merge to main)
+
+**Branch:** `feature/phase-10-auto-enhance` — 9 commits ahead of main. Merge after Tauri-mode validation.
+
+**Goal:** Automatically enhance imported JPEG/PNG photos on a per-stream basis; add non-destructive adjustment controls in Workshop.
+
+**What was built:**
+
+- `src-tauri/src/enhance.rs` — Rust image pipeline: brightness/contrast (rayon parallel, centered at 128), saturation boost (variable factor), separable Gaussian blur (rayon horizontal + vertical passes), unsharp mask, JPEG-92 output. Removed per-channel auto levels that caused color casts on green-screen photos.
+- `enhance_photo` Tauri command: accepts `brightness`, `contrast`, `saturation`, `sharpen` as `Option<f32>`, defaults 0 / 0 / 1.08 / 0.25.
+- `apply_photo_adjustments` Tauri command: bakes workshop slider values (−50..+50 range) into the enhanced file in-place; used by Workshop "Save Changes".
+- `PhotoVersion` + `PhotoVersionKind` types in `models.ts`; `photo_versions` table via DB migrations 8–9.
+- `ImageStream` extended with `autoEnhanceEnabled`, `enhanceBrightness`, `enhanceContrast`, `enhanceSaturation`, `enhanceSharpen` — DB migrations 10–11, SQLite store, repository, AppContext, StreamSetupDialog all updated.
+- `Photo` extended with `processingStatus`, `activeVersionKind`, `beforeImageUrl`.
+- `src/ingest/enhancementService.ts` — TypeScript bridge: fire-and-forget post-import; writes original + enhanced `PhotoVersion` records; updates photo with enhanced `displayUrl`, `afterImageUrl`, `thumbnailUrl`, `processingStatus: 'done'`.
+- `autoImportPipeline.ts` — calls enhancementService when `imageStream.autoEnhanceEnabled`, passes all four enhancement params.
+- `photoSourceResolver.ts` bug fixed: was overwriting `afterImageUrl`/`displayUrl` with original storagePath, discarding enhanced URLs; now trusts DB values and only falls back for empty fields.
+- `StreamSetupDialog.tsx` — Auto Enhance panel: toggle + 4 sliders (Brightness −30..+30, Contrast −30..+30, Saturation 0..+50%, Sharpness 0..80%).
+- `CenterPanel.tsx` (Workshop): inline B/C/S toolbar sliders (−50..+50) with real-time CSS filter preview; "Save Changes" button bakes and cache-busts URL; compare slider default = 95%; ENHANCED pane on left, ORIGINAL on right; 1.5 s poll while `processingStatus === 'processing'`.
+- `AppContext.tsx` — `getPhotoVersions`, `refreshPhotoInPlace` actions.
+
+**Deferred from Phase 10:**
+- CSP dev/prod split (Tauri v2 limitation).
+- Runtime `fs:scope` injection.
 - Removing `unsafe-inline` from `style-src`.
 
 ## Phase 9 — Previous Focus (COMPLETE)
@@ -168,7 +195,7 @@ Primary reference: `snapdesk.html` — open in browser to compare against the ru
 
 Do not delete or modify the handoff folder. Use it as ongoing visual direction for all phases.
 
-## Project Structure (as of Phase 8 + operational UI cleanup)
+## Project Structure (as of Phase 10)
 
 ```
 src/
@@ -184,38 +211,54 @@ src/
   features/
     gallery/
       GalleryCenter.tsx  ← filters sessions by location + hour + operatingDate from context
-      GalleryRight.tsx   ← preview, session info, open/delete actions; no processing/favorite/flag controls
+      GalleryRight.tsx   ← preview, session info, open/delete actions; processing status badge
     workshop/
-      CenterPanel.tsx    ← session strip, compare view, toolbar, thumbnails, active-session info
+      CenterPanel.tsx    ← compare view (enhanced left/original right), inline B/C/S sliders,
+                           Save Changes, toolbar, thumbnails, active-session info
       HourFilmstrip.tsx  ← filtered by hour + location + operatingDate; 2 thumbnails per session + badge
     streams/
       ImageStreamsCenter.tsx  ← stream rail, cards, live folder view (2s poll), sparkline, modals
+      StreamCard.tsx
+      StreamSetupDialog.tsx   ← Auto Enhance panel (4 sliders), File Renaming, Auto-Print
+      StreamActivityTab.tsx
+      StreamFolderTab.tsx
+      AutoPrintSetupDialog.tsx
+      streamUiHelpers.ts
   data/
     models.ts        ← all TypeScript interfaces and types
     seedData.ts      ← 14 seed sessions, generated photos, 4 locations, 12 hour buckets
     localStore.ts    ← raw browser localStorage helpers
     repository.ts    ← public data API; getLocations() returns streams when any exist
     stores/          ← metadata store interface, browser store, SQLite store, store factory
-    db/              ← SQLite connection, schema, and migrations
+    db/              ← SQLite connection, schema, and migrations (11 migrations as of Phase 10)
   ingest/
     filenameParser.ts         ← parses session key + sequence from filenames
     sessionRoutingService.ts  ← finds or creates sessions from parsed filename data
-    autoImportPipeline.ts     ← orchestrates file → session → photo creation
+    autoImportPipeline.ts     ← orchestrates file → session → photo creation; calls enhancementService
     watchedFolderService.ts   ← Tauri filesystem watcher, stability checks
     watchedFolderTypes.ts     ← watcher types
+    enhancementService.ts     ← fire-and-forget post-import enhancement bridge; writes PhotoVersion records
   storage/
     photoStorage.ts           ← PhotoStorageService interface + SavePhotoContext
     tauriPhotoStorage.ts      ← writes files to C:\PhotoFlow Desktop\photos\...
     browserPhotoStorage.ts    ← base64 data URL fallback for browser mode
+    photoSourceResolver.ts    ← resolves raw storagePaths to Tauri asset URLs; trusts DB enhanced URLs
   context/
-    AppContext.tsx   ← data state: sessions, photos, tab, hour, filter, selectedLocationId, operatingDate; hours is a derived useMemo
+    AppContext.tsx   ← data state + actions: sessions, photos, tab, hour, filter, selectedLocationId,
+                       operatingDate, getPhotoVersions, refreshPhotoInPlace
+  utils/
+    confirm.ts       ← confirmDestructive() — native OS dialog in Tauri, window.confirm fallback
+    slugify.ts
   styles/
     global.css       ← full CSS design system
-  App.tsx            ← AppProvider wrapper; UI-only state (zoom, activeTool, split) stays here
+  App.tsx            ← AppProvider wrapper; UI-only state (zoom, activeTool, split=95) stays here
   main.tsx
 src-tauri/
   src/
-    lib.rs           ← Tauri commands: reveal_in_explorer, list_folder_files
+    lib.rs           ← Tauri commands: reveal_in_explorer, list_folder_files,
+                       enhance_photo, apply_photo_adjustments
+    enhance.rs       ← Rust image pipeline: brightness/contrast, saturation, parallel Gaussian blur,
+                       unsharp mask, apply_adjustments for in-place bake
 public/
   demo-assets/       ← before.jpg, after.png (demo photos)
 design-handoff/      ← reference only, do not modify
@@ -247,10 +290,16 @@ Session {
 Photo {
   id, sessionId, filename, thumbnailUrl, displayUrl,
   beforeImageUrl, afterImageUrl, createdAt, captureLocationId,
-  processingStatus, flag, isFavorite, isHidden, operatorNotes,
-  enhanceVersion, width, height, fileSizeMb, fileFormat,
+  processingStatus, activeVersionKind, flag, isFavorite, isHidden, operatorNotes,
+  width, height, fileSizeMb, fileFormat,
   storageKind, storagePath, imageStreamId
 }
+
+// Phase 10 addition
+PhotoVersion {
+  id, photoId, kind: PhotoVersionKind, storagePath, displayUrl, createdAt, fileSizeMb
+}
+PhotoVersionKind: 'original' | 'enhanced'
 
 ImportQueueItem {
   id, filename, status, sessionId, imageStreamId,
@@ -260,14 +309,19 @@ ImportQueueItem {
 CaptureLocation { id, name, code, isActive }
 HourBucket      { h, label, sub, count, flagged }
 
-// Phase 8 additions
+// Phase 8 additions, extended in Phase 10
 ImageStream {
   id, name, slug, code, captureLocationId, watchPath,
-  enabled, fileNaming, autoPrint, createdAt, updatedAt
+  enabled, processingPreset, printerName, autoPrintEnabled, autoPrintItems,
+  autoEnhanceEnabled,
+  enhanceBrightness, enhanceContrast, enhanceSaturation, enhanceSharpen,
+  fileRenamingEnabled, fileNamingFields, fileNamingSeparator, fileNamingExtension,
+  createdAt, updatedAt
 }
 
 FileNamingField: 'sessionKey' | 'sequence' | 'date' | 'streamCode' | 'original'
-FileNamingConfig { enabled: boolean; fields: FileNamingField[] }
+FileNamingSeparator: '-' | '.' | '_'
+FileNamingExtension: 'JPG' | 'DNG' | 'RAW'
 
 AutoPrintItem {
   id, streamId, label, qty, size, templateId, printerRoute
