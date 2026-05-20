@@ -109,17 +109,16 @@ export function CenterPanel({
     ? `brightness(${1 + brightness / 100}) contrast(${1 + contrast / 100}) saturate(${1 + saturation / 100})`
     : undefined;
 
-  // Left pane: working version (enhanced if available, else current) + CSS adjustments.
-  // Right pane: raw original, no filter — always a clean reference.
-  // Compare is always available so the slider works for adjustment preview too.
-  const leftLabel  = hasEnhanced
+  // Left pane: raw original — the clean reference.
+  // Right pane: enhanced (or working) version + CSS adjustments.
+  const leftLabel  = 'ORIGINAL';
+  const rightLabel = hasEnhanced
     ? 'ENHANCED ✦'
     : isProcessing
       ? 'ENHANCING…'
       : adjustmentsActive
         ? 'ADJUSTED'
         : 'ORIGINAL';
-  const rightLabel = 'ORIGINAL';
 
   const updateSplit = useCallback((e: MouseEvent) => {
     if (!wrapRef.current) return;
@@ -181,18 +180,27 @@ export function CenterPanel({
           <div
             className="compare"
             ref={wrapRef}
-            style={{ width: '100%', height: '100%', maxWidth: 1080, maxHeight: 620, aspectRatio: '1080 / 620', '--split': `${split}%` } as React.CSSProperties}
+            style={{ width: '100%', height: '100%', '--split': `${split}%` } as React.CSSProperties}
           >
             {compareMode ? (
               <>
-                {/* Before pane — shows ENHANCED (left side, revealed up to split%) */}
+                {/* Before pane — ORIGINAL (left side, revealed up to split%) — no filter, always raw */}
                 <div className="pane before">
+                  <img
+                    src={beforeUrl}
+                    alt="Original"
+                    onLoad={() => setImgLoaded(true)}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                </div>
+
+                {/* After pane — ENHANCED (right side, visible from split% onward) + CSS adjustments */}
+                <div className="pane after">
                   <div className="checker" style={{ position: 'absolute', inset: 0 }} />
                   <img
                     src={afterUrl}
                     alt="Enhanced"
-                    onLoad={() => setImgLoaded(true)}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', filter: imgFilter }}
                   />
                   {isProcessing && !hasEnhanced && (
                     <div style={{
@@ -202,15 +210,6 @@ export function CenterPanel({
                       <Sparkles size={22} style={{ color: 'var(--accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
                     </div>
                   )}
-                </div>
-
-                {/* After pane — shows ORIGINAL (right side, visible from split% onward) — no filter, always raw */}
-                <div className="pane after">
-                  <img
-                    src={beforeUrl}
-                    alt="Original"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
                 </div>
 
                 {/* Slider */}
@@ -237,7 +236,7 @@ export function CenterPanel({
                   src={currentPhoto?.displayUrl ?? beforeUrl}
                   alt="Photo"
                   onLoad={() => setImgLoaded(true)}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', filter: imgFilter }}
                 />
                 {hasEnhanced && (
                   <div className="compare-label r mono" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -328,15 +327,13 @@ export function CenterPanel({
 
           <div className="grow-spacer" />
           <div className="tool-group" style={{ borderRight: 'none', paddingRight: 0, gap: 6 }}>
-            {adjustmentsActive && isTauriRuntime() && (
-              <button
-                className="btn primary"
-                disabled={saving}
-                onClick={() => void saveAdjustments()}
-              >
-                <Save size={12} /> {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            )}
+            <button
+              className={`btn ${adjustmentsActive && isTauriRuntime() ? 'primary' : 'ghost'}`}
+              disabled={!adjustmentsActive || !isTauriRuntime() || saving}
+              onClick={() => void saveAdjustments()}
+            >
+              <Save size={12} /> {saving ? 'Saving…' : 'Save Changes'}
+            </button>
             <button className="btn primary"><Upload size={12} /> Export</button>
           </div>
         </div>

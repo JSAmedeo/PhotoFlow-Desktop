@@ -23,7 +23,7 @@ function Shell() {
 
   // UI-only state — does not belong in context
   const [activePhoto, setActivePhoto] = useState(1);
-  const [split,       setSplit]       = useState(95);
+  const [split,       setSplit]       = useState(50);
   const [zoom,        setZoom]        = useState(100);
   const [activeTool,  setActiveTool]  = useState('brush');
   const [scale,       setScale]       = useState(1);
