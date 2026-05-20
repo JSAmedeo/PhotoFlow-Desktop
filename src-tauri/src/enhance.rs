@@ -163,25 +163,20 @@ fn blur_horizontal(src: &[u8], width: usize, _height: usize, kernel: &[f32]) -> 
 fn blur_vertical(src: &[u8], width: usize, height: usize, kernel: &[f32]) -> Vec<u8> {
     let radius = kernel.len() / 2;
     let mut dst = vec![0u8; src.len()];
-    // Parallelise over columns so each thread works an independent column stripe.
-    let cols_per_chunk = (width / rayon::current_num_threads()).max(1);
-    dst.par_chunks_mut(cols_per_chunk * 3)
+    // Parallelise over output rows — same pattern as blur_horizontal but kernel
+    // is applied vertically (sy varies, x is fixed within each row).
+    dst.par_chunks_mut(width * 3)
         .enumerate()
-        .for_each(|(chunk_idx, col_chunk)| {
-            let x_start = chunk_idx * cols_per_chunk;
-            let x_end = (x_start + cols_per_chunk).min(width);
-            for x in x_start..x_end {
-                let lx = x - x_start;
-                for y in 0..height {
-                    for c in 0..3 {
-                        let mut acc = 0.0f32;
-                        for (ki, &kv) in kernel.iter().enumerate() {
-                            let sy = (y as i64 + ki as i64 - radius as i64)
-                                .clamp(0, height as i64 - 1) as usize;
-                            acc += src[sy * width * 3 + x * 3 + c] as f32 * kv;
-                        }
-                        col_chunk[lx * 3 + y * cols_per_chunk * 3 + c] = acc.clamp(0.0, 255.0) as u8;
+        .for_each(|(y, row_dst)| {
+            for x in 0..width {
+                for c in 0..3 {
+                    let mut acc = 0.0f32;
+                    for (ki, &kv) in kernel.iter().enumerate() {
+                        let sy = (y as i64 + ki as i64 - radius as i64)
+                            .clamp(0, height as i64 - 1) as usize;
+                        acc += src[sy * width * 3 + x * 3 + c] as f32 * kv;
                     }
+                    row_dst[x * 3 + c] = acc.clamp(0.0, 255.0) as u8;
                 }
             }
         });
