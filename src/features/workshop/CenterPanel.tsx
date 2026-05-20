@@ -190,17 +190,16 @@ export function CenterPanel({
                     src={beforeUrl}
                     alt="Original"
                     onLoad={() => setImgLoaded(true)}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 </div>
 
                 {/* After pane — ENHANCED (right side, visible from split% onward) + CSS adjustments */}
                 <div className="pane after">
-                  <div className="checker" style={{ position: 'absolute', inset: 0 }} />
                   <img
                     src={afterUrl}
                     alt="Enhanced"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', filter: imgFilter }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
                   />
                   {isProcessing && !hasEnhanced && (
                     <div style={{
@@ -236,7 +235,7 @@ export function CenterPanel({
                   src={currentPhoto?.displayUrl ?? beforeUrl}
                   alt="Photo"
                   onLoad={() => setImgLoaded(true)}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', filter: imgFilter }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
                 />
                 {hasEnhanced && (
                   <div className="compare-label r mono" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -309,7 +308,7 @@ export function CenterPanel({
                   value={adj.value}
                   title={`${adj.title}: ${adj.value > 0 ? '+' : ''}${adj.value}`}
                   onChange={e => adj.set(Number(e.target.value))}
-                  style={{ width: 64, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                  style={{ width: 48, accentColor: 'var(--accent)', cursor: 'pointer' }}
                 />
               </div>
             ))}

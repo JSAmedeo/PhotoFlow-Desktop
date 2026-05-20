@@ -68,14 +68,11 @@ async function processCandidate(candidate: WatchedFileCandidate, options: StartW
       options.settings.fileSettleDelayMs,
       options.imageStream,
     );
-    // Only guard against re-processing when the file was NOT successfully removed
-    // (failed/skipped imports leave the file in the folder). Complete imports remove
-    // the file, so there is nothing to block — a new file dropped at the same path
-    // should be picked up immediately.
-    if (result !== 'complete') {
-      recentlyHandled.add(candidate.path);
-      window.setTimeout(() => recentlyHandled.delete(candidate.path), 10_000);
-    }
+    // Always guard the path: 5 s for complete imports (covers the deletion-event window
+    // and any scanExistingFiles run on watcher restart before the file is removed);
+    // 10 s for failed/skipped so a retry doesn't fire immediately.
+    recentlyHandled.add(candidate.path);
+    window.setTimeout(() => recentlyHandled.delete(candidate.path), result === 'complete' ? 5_000 : 10_000);
     options.onStatus({
       status: options.settings.watchEnabled ? 'watching' : 'off',
       lastDetected: candidate.filename,
