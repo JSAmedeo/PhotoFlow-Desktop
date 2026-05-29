@@ -211,10 +211,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fileNamingExtension: stream.fileNamingExtension,
   }))), [imageStreams]);
   const imageStreamsRef = useRef<ImageStream[]>([]);
+  const selectedSessionIdRef = useRef<string>(selectedSessionId);
 
   useEffect(() => {
     imageStreamsRef.current = imageStreams;
   }, [imageStreams]);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -246,15 +251,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void bootstrap();
   }, []);
 
-  const refreshData = useCallback(async (sessionId = selectedSessionId) => {
-    const resolved = await getResolvedPhotoState(sessionId);
+  // stable identity — reads selectedSessionIdRef at call time so session selection
+  // changes don't recreate this callback and restart the file watcher.
+  const refreshData = useCallback(async (sessionId?: string) => {
+    const sid = sessionId ?? selectedSessionIdRef.current;
+    const resolved = await getResolvedPhotoState(sid);
     setSessions(await getSessions());
     setAllPhotos(resolved.allPhotos);
     setPhotos(resolved.photos);
     setLocations(await getLocations());
     setImageStreams(await repoGetImageStreams());
     setImportQueue(await getImportQueue());
-  }, [selectedSessionId]);
+  }, []);
 
   useEffect(() => {
     if (isLoading) return undefined;
@@ -267,7 +275,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void startImageStreamWatchers({
       streams: imageStreamsRef.current,
       settleDelayMs: watchedFolderSettings.fileSettleDelayMs,
-      sessionId: selectedSessionId,
+      sessionId: selectedSessionIdRef.current,
       onStatus: setWatcherRuntime,
       onStreamStatus: (streamId, state) => {
         const nextStatus = state.status === 'importing'
@@ -289,14 +297,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )));
       },
       onImported: async () => {
-        await refreshData(selectedSessionId);
+        await refreshData();
       },
     });
 
     return () => {
       void stopWatchedFolder();
     };
-  }, [isLoading, refreshData, selectedSessionId, streamWatcherConfig, watchedFolderSettings.fileSettleDelayMs]);
+  }, [isLoading, refreshData, streamWatcherConfig, watchedFolderSettings.fileSettleDelayMs]);
 
   const selectSession = useCallback((id: string, preferredPhotoId?: string) => {
     void (async () => {

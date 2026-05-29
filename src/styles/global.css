@@ -202,8 +202,8 @@ html, body, #root {
   border-radius: 3px; overflow: hidden; user-select: none;
 }
 .compare .pane { position: absolute; inset: 0; }
-.compare .pane.after  { clip-path: inset(0 0 0 var(--split, 50%)); }
 .compare .pane.before { clip-path: inset(0 calc(100% - var(--split, 50%)) 0 0); }
+.compare .pane.after  { clip-path: inset(0 0 0 var(--split, 50%)); }
 .checker {
   background-color: #fff;
   background-image:

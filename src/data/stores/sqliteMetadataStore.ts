@@ -719,8 +719,16 @@ export const sqliteMetadataStore: MetadataStore = {
   async addSession(session) {
     const existing = await this.getSessionByCode(session.sessionCode);
     if (existing) return existing;
-    await upsertSession(session);
-    return session;
+    try {
+      await upsertSession(session);
+      return session;
+    } catch (error) {
+      // Race condition: a concurrent import created this session between our
+      // getSessionByCode check and the upsertSession call. Re-fetch the winner.
+      const raced = await this.getSessionByCode(session.sessionCode);
+      if (raced) return raced;
+      throw error;
+    }
   },
 
   async updateSessionMetadata(id, changes) {

@@ -1,9 +1,30 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, memo } from 'react';
 import { Search, ArrowUpDown, RefreshCw, Layers, Eye, Flag, Trash2, Check } from 'lucide-react';
 import { Tile } from '../../components/Tile';
 import { useApp } from '../../context/AppContext';
 import type { Photo } from '../../data/models';
 import { confirmDestructive } from '../../utils/confirm';
+
+const FallbackImg = memo(function FallbackImg({
+  src, fallback, alt, style,
+}: { src: string; fallback?: string; alt: string; style?: React.CSSProperties }) {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => { setImgSrc(src); setHidden(false); }, [src]);
+  return (
+    <img
+      src={imgSrc}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      style={{ ...style, display: hidden ? 'none' : style?.display }}
+      onError={() => {
+        if (fallback && imgSrc !== fallback) setImgSrc(fallback);
+        else setHidden(true);
+      }}
+    />
+  );
+});
 
 export function GalleryCenter() {
   const {
@@ -179,13 +200,11 @@ export function GalleryCenter() {
                   boxShadow: selectedPhotoIds.includes(photo.id) ? '0 0 0 2px rgba(61,214,196,0.35)' : undefined,
                 }}>
                   {photo.thumbnailUrl ? (
-                    <img
+                    <FallbackImg
                       src={photo.thumbnailUrl}
+                      fallback={photo.beforeImageUrl || photo.displayUrl}
                       alt={photo.filename}
-                      loading="lazy"
-                      decoding="async"
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   ) : (
                     <Tile tint={s.tint} size={84} sessionPos={s.id + i} />

@@ -23,16 +23,23 @@ interface CenterPanelProps {
 }
 
 const SessionPhotoMini = memo(function SessionPhotoMini({
-  idx, active, selected, status, src, filename,
-}: { idx: number; active: boolean; selected: boolean; status: string; src: string; filename: string }) {
+  idx, active, selected, status, src, fallbackSrc, filename,
+}: { idx: number; active: boolean; selected: boolean; status: string; src: string; fallbackSrc?: string; filename: string }) {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => { setImgSrc(src); setHidden(false); }, [src]);
+
   return (
     <div className={`session-thumb ${active ? 'active' : ''}`} style={{ boxShadow: selected ? '0 0 0 2px rgba(61,214,196,0.55)' : undefined }}>
       <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
         <img
-          src={src}
+          src={imgSrc}
           alt={filename || `Frame ${idx}`}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: hidden ? 'none' : 'block' }}
+          onError={() => {
+            if (fallbackSrc && imgSrc !== fallbackSrc) setImgSrc(fallbackSrc);
+            else setHidden(true);
+          }}
         />
       </div>
       <div className="st-tag">{`#${String(idx).padStart(2, '0')}`}</div>
@@ -73,6 +80,8 @@ export function CenterPanel({
   const [contrast, setContrast] = useState(0);
   const [saturation, setSaturation] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [afterUrlFailed, setAfterUrlFailed] = useState(false);
+  const [singleUrlFailed, setSingleUrlFailed] = useState(false);
 
   // Load versions when photo changes.
   useEffect(() => {
@@ -91,6 +100,18 @@ export function CenterPanel({
     return () => clearInterval(id);
   }, [currentPhoto?.id, currentPhoto?.processingStatus, refreshPhotoInPlace]);
 
+  const hasEnhanced = versions.some(v => v.kind === 'enhanced');
+  const isProcessing = currentPhoto?.processingStatus === 'processing';
+
+  const beforeUrl = currentPhoto?.beforeImageUrl ?? currentPhoto?.displayUrl ?? '/demo-assets/before.jpg';
+  const afterUrl  = currentPhoto?.afterImageUrl  ?? beforeUrl;
+  const effectiveAfterUrl  = afterUrlFailed  ? beforeUrl : afterUrl;
+  const effectiveSingleUrl = singleUrlFailed ? beforeUrl : (currentPhoto?.displayUrl ?? beforeUrl);
+
+  // Reset image fallback state when the photo or its URLs change.
+  useEffect(() => { setAfterUrlFailed(false); }, [afterUrl]);
+  useEffect(() => { setSingleUrlFailed(false); }, [currentPhoto?.id]);
+
   // Auto-enable compare mode when an enhanced version becomes available.
   useEffect(() => {
     if (versions.some(v => v.kind === 'enhanced')) {
@@ -98,19 +119,13 @@ export function CenterPanel({
     }
   }, [versions]);
 
-  const hasEnhanced = versions.some(v => v.kind === 'enhanced');
-  const isProcessing = currentPhoto?.processingStatus === 'processing';
-
-  const beforeUrl = currentPhoto?.beforeImageUrl ?? currentPhoto?.displayUrl ?? '/demo-assets/before.jpg';
-  const afterUrl  = currentPhoto?.afterImageUrl  ?? beforeUrl;
-
   const adjustmentsActive = brightness !== 0 || contrast !== 0 || saturation !== 0;
   const imgFilter = adjustmentsActive
     ? `brightness(${1 + brightness / 100}) contrast(${1 + contrast / 100}) saturate(${1 + saturation / 100})`
     : undefined;
 
-  // Left pane: raw original — the clean reference.
-  // Right pane: enhanced (or working) version + CSS adjustments.
+  // Left corner label = what you see when handle is all the way left (ORIGINAL).
+  // Right corner label = what you see when handle is all the way right (ENHANCED).
   const leftLabel  = 'ORIGINAL';
   const rightLabel = hasEnhanced
     ? 'ENHANCED ✦'
@@ -184,22 +199,14 @@ export function CenterPanel({
           >
             {compareMode ? (
               <>
-                {/* Before pane — ORIGINAL (left side, revealed up to split%) — no filter, always raw */}
+                {/* Before pane — ENHANCED (left side, grows as handle moves right) + CSS adjustments */}
                 <div className="pane before">
                   <img
-                    src={beforeUrl}
-                    alt="Original"
-                    onLoad={() => setImgLoaded(true)}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </div>
-
-                {/* After pane — ENHANCED (right side, visible from split% onward) + CSS adjustments */}
-                <div className="pane after">
-                  <img
-                    src={afterUrl}
+                    src={effectiveAfterUrl}
                     alt="Enhanced"
+                    onLoad={() => setImgLoaded(true)}
                     style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                    onError={() => setAfterUrlFailed(true)}
                   />
                   {isProcessing && !hasEnhanced && (
                     <div style={{
@@ -209,6 +216,15 @@ export function CenterPanel({
                       <Sparkles size={22} style={{ color: 'var(--accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
                     </div>
                   )}
+                </div>
+
+                {/* After pane — ORIGINAL (right side, revealed by dragging handle left) — no filter */}
+                <div className="pane after">
+                  <img
+                    src={beforeUrl}
+                    alt="Original"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
                 </div>
 
                 {/* Slider */}
@@ -232,10 +248,11 @@ export function CenterPanel({
               /* Single view — shows the active version (displayUrl) */
               <div className="pane before" style={{ clipPath: 'none' }}>
                 <img
-                  src={currentPhoto?.displayUrl ?? beforeUrl}
+                  src={effectiveSingleUrl}
                   alt="Photo"
                   onLoad={() => setImgLoaded(true)}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: imgFilter }}
+                  onError={() => setSingleUrlFailed(true)}
                 />
                 {hasEnhanced && (
                   <div className="compare-label r mono" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -330,6 +347,7 @@ export function CenterPanel({
               className={`btn ${adjustmentsActive && isTauriRuntime() ? 'primary' : 'ghost'}`}
               disabled={!adjustmentsActive || !isTauriRuntime() || saving}
               onClick={() => void saveAdjustments()}
+              style={{ minWidth: 108 }}
             >
               <Save size={12} /> {saving ? 'Saving…' : 'Save Changes'}
             </button>
@@ -357,6 +375,7 @@ export function CenterPanel({
               selected={selectedPhotoIds.includes(p.id)}
               status={p.processingStatus}
               src={p.thumbnailUrl}
+              fallbackSrc={p.beforeImageUrl || p.displayUrl}
               filename={p.filename}
             />
           </div>

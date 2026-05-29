@@ -36,11 +36,13 @@ export async function enhanceImportedPhoto(
     const { invoke } = await import('@tauri-apps/api/core');
     const { convertFileSrc } = await import('@tauri-apps/api/core');
 
+    // brightness/contrast are stored as -30..+30 integers (percent); Rust expects fractions (0.05 = 5%).
+    // saturation is already a multiplier (1.08 = 8% boost); sharpen is already a fraction (0.25).
     await invoke<string>('enhance_photo', {
       inputPath: storagePath,
       outputPath,
-      brightness: options?.brightness ?? 0,
-      contrast: options?.contrast ?? 0,
+      brightness: (options?.brightness ?? 0) / 100,
+      contrast: (options?.contrast ?? 0) / 100,
       saturation: options?.saturation ?? 1.08,
       sharpen: options?.sharpen ?? 0.25,
     });
