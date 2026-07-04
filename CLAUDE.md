@@ -61,6 +61,7 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | 9 | Stream ingest hardening + activity visibility | **COMPLETE** |
 | — | Security hardening (pre-Phase 10) | **COMPLETE** |
 | 10 | Auto image enhancement pipeline | **COMPLETE (pending merge)** |
+| 10.5 | Bug fix: concurrency safety, fs-scope hardening, migrations, content de-duplication | **COMPLETE** |
 | 11 | (TBD) | **NEXT** |
 
 ## Security Hardening — Previous Focus (COMPLETE)
@@ -230,7 +231,7 @@ src/
     localStore.ts    ← raw browser localStorage helpers
     repository.ts    ← public data API; getLocations() returns streams when any exist
     stores/          ← metadata store interface, browser store, SQLite store, store factory
-    db/              ← SQLite connection, schema, and migrations (11 migrations as of Phase 10)
+    db/              ← SQLite connection, schema, and migrations (12 migrations as of Phase 10.5)
   ingest/
     filenameParser.ts         ← parses session key + sequence from filenames
     sessionRoutingService.ts  ← finds or creates sessions from parsed filename data
@@ -292,7 +293,7 @@ Photo {
   beforeImageUrl, afterImageUrl, createdAt, captureLocationId,
   processingStatus, activeVersionKind, flag, isFavorite, isHidden, operatorNotes,
   width, height, fileSizeMb, fileFormat,
-  storageKind, storagePath, imageStreamId
+  storageKind, storagePath, imageStreamId, contentHash
 }
 
 // Phase 10 addition
@@ -445,3 +446,11 @@ For each phase:
 - Use the checklist as the final source of truth before declaring the phase complete
 
 No phase should be considered complete until its checklist has been reviewed and all required items are either completed or explicitly marked as deferred with a reason.
+
+## Cross-Project Context
+
+A shared `CLAUDE.md` capturing architecture, conventions, and decisions across all PhotoFlow projects lives at:
+
+`C:\Users\John\Documents\claude-config\CLAUDE.md`
+
+At the end of any session where architecture, conventions, DB schema, design system, or key decisions changed, update that file to reflect the new state.

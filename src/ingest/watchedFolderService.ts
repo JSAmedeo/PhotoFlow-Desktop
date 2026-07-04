@@ -21,6 +21,16 @@ function filenameFromPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+// Extend the fs plugin scope to this operator-chosen watch folder at runtime. The static
+// capability no longer allows `**`, so watch/readDir/readFile/remove against an arbitrary
+// watch path would be denied without this. The Rust command validates and blocks system
+// roots before granting. Re-granted on every launch because the scope is in-memory.
+export async function grantWatchPathAccess(path: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('allow_watch_path', { path });
+}
+
 function describeError(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -153,6 +163,7 @@ export async function startWatchedFolder(options: StartWatcherOptions): Promise<
   const { watch } = await import('@tauri-apps/plugin-fs');
 
   try {
+    await grantWatchPathAccess(options.settings.watchedImportFolder);
     unwatchCurrent = await watch(
       options.settings.watchedImportFolder,
       event => {
@@ -224,6 +235,7 @@ export async function startImageStreamWatchers(options: StartImageStreamWatchers
     };
 
     try {
+      await grantWatchPathAccess(stream.watchPath);
       const unwatch = await watch(
         stream.watchPath,
         event => {

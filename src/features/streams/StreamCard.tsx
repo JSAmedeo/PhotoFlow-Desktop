@@ -3,6 +3,7 @@ import { Folder, FolderOpen, MapPin, Printer, Settings } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import type { ImageStream, ImportQueueItem } from '../../data/models';
 import { isTauriRuntime } from '../../runtime/runtime';
+import { grantWatchPathAccess } from '../../ingest/watchedFolderService';
 import { AutoPrintSetupDialog } from './AutoPrintSetupDialog';
 import { StreamActivityTab } from './StreamActivityTab';
 import { StreamFolderTab } from './StreamFolderTab';
@@ -88,6 +89,9 @@ export function StreamCard({ stream, isSelected, onSelect }: { stream: ImageStre
     try {
       const { join } = await import('@tauri-apps/api/path');
       const { remove } = await import('@tauri-apps/plugin-fs');
+      // The fs scope no longer allows `**`; ensure this watch folder is granted before
+      // removing a file directly (the watcher may not be running for a disabled stream).
+      await grantWatchPathAccess(stream.watchPath);
       await remove(await join(stream.watchPath, filename));
       await refreshFolder();
     } catch (err) {

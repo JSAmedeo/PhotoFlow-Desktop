@@ -161,4 +161,12 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE image_streams ADD COLUMN enhance_contrast REAL DEFAULT 0',
     ],
   },
+  {
+    id: 12,
+    name: 'photo_content_hash',
+    statements: [
+      'ALTER TABLE photos ADD COLUMN content_hash TEXT',
+      'CREATE INDEX IF NOT EXISTS idx_photos_content_hash ON photos(content_hash)',
+    ],
+  },
 ];

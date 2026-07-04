@@ -2,9 +2,9 @@
 
 Local-first desktop application for operational photo workflows at high-volume souvenir photography venues.
 
-## Current Stage: Security hardening complete — Phase 10 next
+## Current Stage: Phase 10 complete — Phase 10.5 (bug fix) applied
 
-Phase 9 (stream ingest hardening and activity visibility) is complete. A targeted security hardening pass was completed before Phase 10 feature work begins — see `docs/phases/SECURITY_HARDENING_CHECKLIST.md`.
+Phase 9 (stream ingest hardening and activity visibility) and the pre-Phase-10 security hardening pass are complete — see `docs/phases/SECURITY_HARDENING_CHECKLIST.md`. Phase 10 (automatic image enhancement pipeline) is complete. Phase 10.5 is a correctness/hardening interphase that closes concurrency races in session creation and stream-activity counters, removes the filesystem wildcard scope in favor of runtime per-watch-path scope grants, makes SQLite migrations replay cleanly, and adds SHA-256 content de-duplication so a re-sent byte-identical capture is skipped instead of imported twice — see `docs/phases/PHASE_10.5_ACCEPTANCE_CHECKLIST.md`.
 
 The app now supports two runtime modes:
 
@@ -135,7 +135,8 @@ Current production import work is driven by configured **Image Streams** watched
 When photos are imported:
 - each valid routed file becomes a `Photo` record in the parsed filename session
 - imported thumbnails appear in Gallery, Workshop thumbnails, the selected preview, and the before/after compare area
-- re-dropped files are imported as additional photos using a unique filename suffix such as `_2` or `_3`; only an identical source path already recorded as successfully imported is skipped
+- re-dropped files with a *different* image but a colliding filename are imported as additional photos using a unique filename suffix such as `_2` or `_3`
+- **content de-duplication (Phase 10.5):** watched-folder imports compute a SHA-256 hash of the original bytes and store it on the photo. A genuinely re-sent **byte-identical** capture is detected and skipped (marked "Duplicate content — already imported as …" in the import queue) instead of importing as a separate `_2` photo; the redundant source file is removed from the watch folder. Short-lived watcher re-fire events for the same path are still debounced separately.
 - unsupported files and storage failures are shown in the import queue
 - the routed session photo count is updated immediately
 
@@ -147,7 +148,7 @@ Image stream metadata is stored in the same runtime-selected metadata layer: loc
 
 Phase 7 adds filename-based session routing. Filenames containing the first valid `[A-Z]{3}\d{6}` session ID are routed automatically, with lowercase keys normalized to uppercase. Supported sequence patterns near the session ID, such as `XYZ123456_01.jpg`, `XYZ123456-001.jpg`, and `IMG_4021_XYZ123456_05.jpg`, preserve sequence metadata for display ordering. Operators should not manually create sessions from selected imported photos; sessions are created automatically from parsed filename session IDs.
 
-Files with a valid session code route to that session. Files without a recognizable session code are fallback-routed into a derived session based on the filename stem, allowing operators to review and correct them later.
+Every imported image routes — there is no "unrouted/skipped for review" path. Files with a valid `[A-Z]{3}\d{6}` session code route to that session. Files without a recognizable session code get a session auto-created from a sanitized filename-derived key, with the session noted as auto-created so operators can review and correct it later. (This auto-create-on-unrecognized behavior was reconfirmed as the intended product behavior in Phase 10.5.)
 
 Hourly folders in the left panel are based on current-day import time, not photo capture metadata. The panel starts empty for a day with no imports, creates/fills hour folders as photos import, filters by selected capture location unless **All Locations** is selected, and shows the session count in each folder badge. Today at a glance uses the same current-day hourly folder data, constrained to 7 AM through 10 PM with standard-time labels.
 
@@ -164,6 +165,8 @@ C:\PhotoFlow Desktop\photos\{streamName}\{mm_yyyy}\{dd}\{hh}\{sessionKey}\{filen
 This root-level folder is intentional. It gives support staff a predictable location for checking imported originals, backup behavior, and troubleshooting storage issues. Previous app-local imports are intentionally disregarded for the fresh storage start.
 
 Tauri's asset protocol is scoped to `C:\PhotoFlow Desktop\**` so stored originals can be rendered in `<img>` tags inside the desktop webview.
+
+As of Phase 10.5 the filesystem plugin scope no longer allows the `**` wildcard. The static scope covers only managed storage (`C:\PhotoFlow Desktop`) and the app local data dir. Arbitrary operator-chosen watch folders are granted access at runtime: when a watcher starts (or a watched file is removed), the frontend calls the `allow_watch_path` Tauri command, which validates the path against the same blocked-system-roots guard as `list_folder_files` and then extends the fs scope to that one directory. The grant is in-memory and re-applied each launch.
 
 ## Phase 5 SQLite metadata
 
@@ -263,7 +266,9 @@ archive/               ← ignored original handoff zip/archive files
 | 8 | Image streams foundation | Complete |
 | 9 | Stream ingest hardening and activity visibility | Complete |
 | — | Security hardening (pre-Phase 10) | Complete |
-| 10 | (TBD) | **Next** |
+| 10 | Auto image enhancement pipeline | Complete |
+| 10.5 | Bug fix: concurrency safety, fs-scope hardening, migrations, content de-duplication | Complete |
+| 11 | (TBD) | **Next** |
 
 ## Phase checklist rule
 

@@ -98,6 +98,7 @@ type PhotoRow = {
   routing_reason?: string | null;
   size_bytes?: number | null;
   last_modified?: number | null;
+  content_hash?: string | null;
   source_type?: Photo['sourceType'] | null;
   source_path?: string | null;
   managed_original_path?: string | null;
@@ -272,6 +273,7 @@ function rowToPhoto(row: PhotoRow): Photo {
     routingReason: row.routing_reason ?? undefined,
     sizeBytes: row.size_bytes ?? undefined,
     lastModified: row.last_modified ?? undefined,
+    contentHash: row.content_hash ?? undefined,
     importedFile,
     autoEnhanceEnabled: row.auto_enhance_enabled === 1,
     activeVersionKind: row.active_version_kind ?? 'original',
@@ -433,8 +435,8 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       storage_kind, storage_path, original_filename, source_filename, session_key, sequence_number,
       sequence_label, routing_status, routing_reason, size_bytes, last_modified, source_type,
       source_path, managed_original_path, image_stream_id, image_stream_name, imported_at,
-      imported_file_json, auto_enhance_enabled, active_version_kind
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
+      imported_file_json, auto_enhance_enabled, active_version_kind, content_hash
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41)
     ON CONFLICT(id) DO UPDATE SET
       session_id = excluded.session_id,
       filename = excluded.filename,
@@ -474,7 +476,8 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       imported_at = excluded.imported_at,
       imported_file_json = excluded.imported_file_json,
       auto_enhance_enabled = excluded.auto_enhance_enabled,
-      active_version_kind = excluded.active_version_kind`,
+      active_version_kind = excluded.active_version_kind,
+      content_hash = excluded.content_hash`,
     [
       photo.id,
       photo.sessionId,
@@ -516,6 +519,7 @@ async function upsertPhoto(photo: Photo): Promise<void> {
       photo.importedFile ? JSON.stringify(photo.importedFile) : null,
       boolToInt(photo.autoEnhanceEnabled ?? false),
       photo.activeVersionKind ?? 'original',
+      photo.contentHash ?? null,
     ],
   );
 }
@@ -762,6 +766,15 @@ export const sqliteMetadataStore: MetadataStore = {
   async getPhotoById(id) {
     const db = await getDatabase();
     const rows = await db.select<PhotoRow[]>('SELECT * FROM photos WHERE id = $1', [id]);
+    return rows[0] ? rowToPhoto(rows[0]) : undefined;
+  },
+
+  async getPhotoByContentHash(contentHash) {
+    const db = await getDatabase();
+    const rows = await db.select<PhotoRow[]>(
+      'SELECT * FROM photos WHERE content_hash = $1 ORDER BY created_at LIMIT 1',
+      [contentHash],
+    );
     return rows[0] ? rowToPhoto(rows[0]) : undefined;
   },
 

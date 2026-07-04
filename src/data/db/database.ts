@@ -26,9 +26,13 @@ async function hasMigration(db: Database, id: number): Promise<boolean> {
   }
 }
 
+// Only "already exists" (from CREATE TABLE/INDEX IF NOT EXISTS replays) is swallowed.
+// "duplicate column name" is intentionally NOT swallowed any more: after freezing the v1
+// schema, a fresh DB replays with no duplicate-column errors, so any such error now signals
+// a real migration bug that must surface instead of being hidden.
 function isBenignMigrationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /duplicate column name/i.test(message) || /already exists/i.test(message);
+  return /already exists/i.test(message);
 }
 
 export async function runMigrations(): Promise<void> {

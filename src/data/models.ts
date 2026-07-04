@@ -140,6 +140,9 @@ export interface Photo {
   routingReason?: string;
   sizeBytes?: number;
   lastModified?: number;
+  // SHA-256 hex of the original imported bytes. Used to skip re-importing a genuinely
+  // identical re-sent capture (content de-duplication). Set on watched-folder imports.
+  contentHash?: string;
   importedFile?: ImportedFileMetadata;
   autoEnhanceEnabled?: boolean;
   activeVersionKind?: PhotoVersionKind;

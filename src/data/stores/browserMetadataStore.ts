@@ -138,6 +138,11 @@ export const browserMetadataStore: MetadataStore = {
     return (await this.getPhotos()).find(photo => photo.id === id);
   },
 
+  async getPhotoByContentHash(contentHash: string) {
+    if (!contentHash) return undefined;
+    return (await this.getPhotos()).find(photo => photo.contentHash === contentHash);
+  },
+
   async updatePhotoMetadata(id, changes) {
     const photos = await this.getPhotos();
     const idx = photos.findIndex(photo => photo.id === id);

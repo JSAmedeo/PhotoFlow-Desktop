@@ -1,5 +1,29 @@
 mod enhance;
 
+use tauri_plugin_fs::FsExt;
+
+// System-reserved roots that watch folders must never point at. Shared by the
+// list_folder_files guard and the runtime fs-scope grant so both agree.
+fn is_blocked_system_root(compare_path: &str) -> bool {
+    const BLOCKED_ROOTS: &[&str] = &[
+        r"C:\Windows",
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        r"C:\ProgramData",
+        r"C:\System Volume Information",
+        "/etc",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/boot",
+        "/bin",
+        "/sbin",
+        "/usr/bin",
+        "/usr/sbin",
+    ];
+    BLOCKED_ROOTS.iter().any(|root| compare_path.starts_with(root))
+}
+
 #[tauri::command]
 async fn enhance_photo(
     input_path: String,
@@ -62,23 +86,7 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
     // Strip it before string comparison so blocked_roots matches correctly.
     let canonical_str = canonical.to_string_lossy();
     let compare_path = canonical_str.strip_prefix(r"\\?\").unwrap_or(&canonical_str);
-    let blocked_roots: &[&str] = &[
-        r"C:\Windows",
-        r"C:\Program Files",
-        r"C:\Program Files (x86)",
-        r"C:\ProgramData",
-        r"C:\System Volume Information",
-        "/etc",
-        "/sys",
-        "/proc",
-        "/dev",
-        "/boot",
-        "/bin",
-        "/sbin",
-        "/usr/bin",
-        "/usr/sbin",
-    ];
-    if blocked_roots.iter().any(|root| compare_path.starts_with(root)) {
+    if is_blocked_system_root(compare_path) {
         return vec![];
     }
 
@@ -104,6 +112,34 @@ fn list_folder_files(path: String) -> Vec<FolderFileEntry> {
         .collect();
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     entries
+}
+
+/// Grant the fs plugin scope access to a validated, operator-chosen watch folder at
+/// runtime. Watch paths are arbitrary directories that a static capability manifest can't
+/// enumerate, so instead of allowing `**` (full filesystem) we extend the scope per path
+/// here, gated by the same blocked-system-root guard as list_folder_files. The scope is
+/// process-global and in-memory, so the frontend re-grants on every launch when it starts
+/// the watchers.
+#[tauri::command]
+fn allow_watch_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let dir = std::path::Path::new(&path);
+    if !dir.is_dir() {
+        return Err(format!("Watch path is not an existing directory: {path}"));
+    }
+
+    let canonical = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
+    let canonical_str = canonical.to_string_lossy();
+    let compare_path = canonical_str.strip_prefix(r"\\?\").unwrap_or(&canonical_str);
+    if is_blocked_system_root(compare_path) {
+        return Err(format!("Watch path is inside a blocked system directory: {path}"));
+    }
+
+    // Pass the original path: tauri's push_pattern canonicalizes internally and stores
+    // both forms, so requests using the operator's path string still match.
+    app.fs_scope()
+        .allow_directory(dir, true)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -163,7 +199,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files, enhance_photo, apply_photo_adjustments])
+        .invoke_handler(tauri::generate_handler![reveal_in_explorer, list_folder_files, allow_watch_path, enhance_photo, apply_photo_adjustments])
         .run(tauri::generate_context!())
         .expect("error while running PhotoFlow Desktop");
 }

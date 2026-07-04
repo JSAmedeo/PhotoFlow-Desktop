@@ -103,4 +103,38 @@ describe('routePhotoToSession', () => {
     expect(result.sequenceLabel).toBe('01');
     expect(mockStore.addSession).not.toHaveBeenCalled();
   });
+
+  // Regression for Fix 1 (Phase 10.5): a burst of files for the same brand-new session
+  // key must create exactly one session, not race into N creates.
+  it('creates exactly one session under concurrent routing for the same new key', async () => {
+    let created: Session | undefined;
+    // getSessionByCode returns undefined until addSession has run (mirrors a real store
+    // where the row only exists after insert).
+    mockStore.getSessionByCode.mockImplementation(async () => created);
+    mockStore.addSession.mockImplementation(async (s: Session) => {
+      // Simulate async insert latency so the race window is real.
+      await new Promise(resolve => setTimeout(resolve, 5));
+      created = s;
+      return s;
+    });
+
+    const route = (seq: number) =>
+      routePhotoToSession({
+        parsed: {
+          originalFilename: `NEW999999_${seq}.jpg`,
+          sessionKey: 'NEW999999',
+          sequenceNumber: seq,
+          sequenceLabel: String(seq).padStart(2, '0'),
+          routingConfidence: 'matched',
+        },
+      });
+
+    const results = await Promise.all([route(1), route(2), route(3), route(4), route(5)]);
+
+    expect(mockStore.addSession).toHaveBeenCalledOnce();
+    expect(results).toHaveLength(5);
+    const sessionIds = new Set(results.map(r => r.sessionId));
+    expect(sessionIds.size).toBe(1);
+    expect(results.every(r => r.status === 'routed')).toBe(true);
+  });
 });

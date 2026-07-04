@@ -86,6 +86,10 @@ export async function getPhotoById(id: string): Promise<Photo | undefined> {
   return (await getMetadataStore()).getPhotoById(id);
 }
 
+export async function getPhotoByContentHash(contentHash: string): Promise<Photo | undefined> {
+  return (await getMetadataStore()).getPhotoByContentHash(contentHash);
+}
+
 export async function updatePhotoMetadata(
   id: string,
   changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus' | 'afterImageUrl' | 'displayUrl' | 'thumbnailUrl' | 'activeVersionKind' | 'autoEnhanceEnabled'>>,
@@ -271,7 +275,26 @@ export async function deleteImageStream(id: string): Promise<void> {
   await (await getMetadataStore()).deleteImageStream(id);
 }
 
-export async function recordImageStreamActivity(
+// Serializes all stream-activity writes through a single tail-promise chain. The
+// read-modify-write below (read counts, +1, write) interleaves under the concurrent
+// fire-and-forget imports the watcher fires, dropping increments. Chaining every call
+// applies them one at a time regardless of caller concurrency. A store-level atomic
+// `UPDATE … SET total_detected = total_detected + 1` is a future improvement.
+let streamActivityChain: Promise<void> = Promise.resolve();
+
+export function recordImageStreamActivity(
+  streamId: string | undefined,
+  event: 'detected' | 'imported' | 'skipped' | 'failed',
+  filename: string,
+): Promise<void> {
+  const run = streamActivityChain.then(() => applyStreamActivity(streamId, event, filename));
+  // Keep the chain alive even if one application rejects, so a single failure doesn't
+  // wedge all later increments.
+  streamActivityChain = run.catch(() => {});
+  return run;
+}
+
+async function applyStreamActivity(
   streamId: string | undefined,
   event: 'detected' | 'imported' | 'skipped' | 'failed',
   filename: string,
@@ -399,6 +422,7 @@ function makeImportedPhoto(
     importedAt: string;
     sourceFilename?: string;
     autoEnhanceEnabled?: boolean;
+    contentHash?: string;
   },
   routing: SessionRoutingResult,
 ): Photo {
@@ -448,6 +472,7 @@ function makeImportedPhoto(
     routingReason: routing.reason,
     sizeBytes: savedPhoto.sizeBytes,
     lastModified: file.lastModified,
+    contentHash: source.contentHash,
     importedFile: metadata,
     autoEnhanceEnabled: source.autoEnhanceEnabled ?? false,
     activeVersionKind: 'original',
@@ -623,6 +648,7 @@ export async function importWatchedPhotoToSession(
   sourcePath: string,
   queueItemId?: string,
   imageStream?: Pick<ImageStream, 'id' | 'name' | 'slug' | 'code' | 'type' | 'captureLocationId' | 'fileRenamingEnabled' | 'fileNamingFields' | 'fileNamingSeparator' | 'fileNamingExtension' | 'autoEnhanceEnabled' | 'enhanceBrightness' | 'enhanceContrast' | 'enhanceSaturation' | 'enhanceSharpen'>,
+  contentHash?: string,
 ): Promise<Photo | undefined> {
   const parsed = parsePhotoFilename(file.name);
   const streamCaptureLocation: CaptureLocation | undefined = imageStream ? {
@@ -698,6 +724,7 @@ export async function importWatchedPhotoToSession(
       importedAt,
       sourceFilename: file.name,
       autoEnhanceEnabled: imageStream?.autoEnhanceEnabled ?? false,
+      contentHash,
     }, routing));
     await updateImportQueueItem(queueItem.id, {
       status: 'complete',

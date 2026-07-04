@@ -25,6 +25,7 @@ export interface MetadataStore {
   getPhotos(): Promise<Photo[]>;
   getPhotosBySessionId(sessionId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
+  getPhotoByContentHash(contentHash: string): Promise<Photo | undefined>;
   updatePhotoMetadata(
     id: string,
     changes: Partial<Pick<Photo, 'flag' | 'isFavorite' | 'isHidden' | 'operatorNotes' | 'processingStatus' | 'afterImageUrl' | 'displayUrl' | 'thumbnailUrl' | 'activeVersionKind' | 'autoEnhanceEnabled'>>,

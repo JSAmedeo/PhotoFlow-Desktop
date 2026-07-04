@@ -1,5 +1,6 @@
 import {
   addImportQueueItem,
+  getPhotoByContentHash,
   importWatchedPhotoToSession,
   recordImageStreamActivity,
   updateImportQueueItem,
@@ -7,6 +8,7 @@ import {
 import type { ImageStream, ImportQueueItem } from '../data/models';
 import { SUPPORTED_WATCHED_EXTENSIONS, type WatchedFileCandidate } from './watchedFolderTypes';
 import { waitForStableFile } from './fileStability';
+import { sha256Hex } from './contentHash';
 import * as enhancementService from './enhancementService';
 
 function extensionOf(filename: string): string {
@@ -92,11 +94,34 @@ export async function autoImportWatchedFile(
 
     const { readFile } = await import('@tauri-apps/plugin-fs');
     const bytes = await readFile(candidate.path);
+
+    // Content de-duplication: a byte-identical capture that was already imported is a
+    // re-send, not a new photo. Skip it instead of creating a separate _2 copy, and remove
+    // the redundant source file so the watcher doesn't keep re-detecting it.
+    const contentHash = await sha256Hex(bytes);
+    const duplicate = await getPhotoByContentHash(contentHash);
+    if (duplicate) {
+      await updateImportQueueItem(queueItem.id, {
+        status: 'skipped',
+        progress: 100,
+        error: `Duplicate content — already imported as ${duplicate.filename}.`,
+        completedAt: new Date().toISOString(),
+      });
+      await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
+      try {
+        const { remove } = await import('@tauri-apps/plugin-fs');
+        await remove(candidate.path);
+      } catch (deleteError) {
+        console.warn('[PhotoFlow] Could not remove duplicate source file.', deleteError);
+      }
+      return 'skipped';
+    }
+
     const file = new File([bytes], candidate.filename, {
       type: mimeTypeFor(candidate.filename),
       lastModified: stable.lastModified,
     });
-    const imported = await importWatchedPhotoToSession(sessionId, file, candidate.path, queueItem.id, imageStream);
+    const imported = await importWatchedPhotoToSession(sessionId, file, candidate.path, queueItem.id, imageStream, contentHash);
     if (!imported) {
       await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
       return 'skipped';

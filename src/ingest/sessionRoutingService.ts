@@ -57,15 +57,7 @@ async function makeSession(
   };
 }
 
-export async function routePhotoToSession(input: RoutePhotoInput): Promise<SessionRoutingResult> {
-  const { parsed, fallbackSessionId, captureLocation } = input;
-
-  const store = await getMetadataStore();
-  const existing = await store.getSessionByCode(parsed.sessionKey);
-  const session = existing ?? await store.addSession(
-    await makeSession(parsed.sessionKey, parsed.routingConfidence, fallbackSessionId, captureLocation),
-  );
-
+function routedResult(session: Session, parsed: ParsedPhotoFilename, created: boolean): SessionRoutingResult {
   return {
     status: 'routed',
     session,
@@ -73,10 +65,46 @@ export async function routePhotoToSession(input: RoutePhotoInput): Promise<Sessi
     sessionKey: session.sessionCode,
     sequenceNumber: parsed.sequenceNumber,
     sequenceLabel: parsed.sequenceLabel,
-    reason: existing
+    reason: !created
       ? 'Matched existing session.'
       : parsed.routingConfidence === 'fallback'
         ? 'Created session from filename (no standard session code).'
         : 'Created session from filename.',
   };
+}
+
+// Serializes get-or-create for a given session key within this JS context, so a burst of
+// files for the same brand-new session creates exactly one session instead of racing.
+// The only watcher-level dedup guard is keyed by file path, so two files for the same new
+// session key (the normal FTP-burst case) both reach this function and would otherwise
+// both call addSession.
+const sessionCreationLocks = new Map<string, Promise<Session>>();
+
+export async function routePhotoToSession(input: RoutePhotoInput): Promise<SessionRoutingResult> {
+  const { parsed, fallbackSessionId, captureLocation } = input;
+  const store = await getMetadataStore();
+  const key = parsed.sessionKey.toUpperCase();
+
+  // Fast path: session already exists.
+  const existing = await store.getSessionByCode(key);
+  if (existing) return routedResult(existing, parsed, false);
+
+  // Slow path: serialize creation per key so concurrent callers don't double-create.
+  let creation = sessionCreationLocks.get(key);
+  if (!creation) {
+    creation = (async () => {
+      // Re-check inside the lock — another caller may have created it while we waited.
+      const again = await store.getSessionByCode(key);
+      if (again) return again;
+      return store.addSession(
+        await makeSession(parsed.sessionKey, parsed.routingConfidence, fallbackSessionId, captureLocation),
+      );
+    })();
+    // Release the lock once settled, whether the creation resolved or threw.
+    void creation.finally(() => sessionCreationLocks.delete(key));
+    sessionCreationLocks.set(key, creation);
+  }
+
+  const session = await creation;
+  return routedResult(session, parsed, true);
 }

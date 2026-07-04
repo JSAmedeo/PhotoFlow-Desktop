@@ -16,7 +16,6 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "**" },
         { "path": "C:\\PhotoFlow Desktop\\**" },
         { "path": "C:\\PhotoFlow Desktop" },
         { "path": "$APPLOCALDATA/PhotoFlow Desktop/**" },
