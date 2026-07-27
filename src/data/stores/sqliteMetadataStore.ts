@@ -214,6 +214,12 @@ function boolToInt(value: boolean): number {
   return value ? 1 : 0;
 }
 
+// For values inlined into multi-statement transactional batches, where bind
+// parameters can't be used. Standard SQL escaping: double any single quote.
+function sqlStringLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function rowToSession(row: SessionRow): Session {
   return {
     id: row.id,
@@ -721,18 +727,34 @@ export const sqliteMetadataStore: MetadataStore = {
   },
 
   async addSession(session) {
-    const existing = await this.getSessionByCode(session.sessionCode);
-    if (existing) return existing;
-    try {
-      await upsertSession(session);
-      return session;
-    } catch (error) {
-      // Race condition: a concurrent import created this session between our
-      // getSessionByCode check and the upsertSession call. Re-fetch the winner.
-      const raced = await this.getSessionByCode(session.sessionCode);
-      if (raced) return raced;
-      throw error;
-    }
+    // Insert-if-absent, atomically: session_code is UNIQUE, so a concurrent import
+    // racing on the same code simply no-ops here and both callers read back the
+    // winning row. No check-then-insert window.
+    const db = await getDatabase();
+    await db.execute(
+      `INSERT INTO sessions (
+        id, session_code, barcode, capture_location_id, capture_location_label, handler,
+        created_at, updated_at, photo_count, status, notes, linked_session_ids_json, tint_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ON CONFLICT(session_code) DO NOTHING`,
+      [
+        session.id,
+        session.sessionCode,
+        session.barcode,
+        session.captureLocationId,
+        session.captureLocationLabel,
+        session.handler,
+        session.createdAt,
+        session.updatedAt,
+        session.photoCount,
+        session.status,
+        session.notes,
+        JSON.stringify(session.linkedSessionIds),
+        JSON.stringify(session.tint),
+      ],
+    );
+    const winner = await this.getSessionByCode(session.sessionCode);
+    return winner ?? session;
   },
 
   async updateSessionMetadata(id, changes) {
@@ -746,9 +768,17 @@ export const sqliteMetadataStore: MetadataStore = {
 
   async deleteSession(sessionId) {
     const db = await getDatabase();
-    await db.execute('DELETE FROM import_queue WHERE session_id = $1', [sessionId]);
-    await db.execute('DELETE FROM photos WHERE session_id = $1', [sessionId]);
-    await db.execute('DELETE FROM sessions WHERE id = $1', [sessionId]);
+    // One multi-statement execute = one pooled connection, so the transaction is
+    // real (sqlx's SQLite driver runs the statements sequentially on one handle).
+    // Interrupting mid-delete leaves no orphaned photos or queue rows.
+    const id = sqlStringLiteral(sessionId);
+    await db.execute(
+      `BEGIN IMMEDIATE;
+      DELETE FROM import_queue WHERE session_id = ${id};
+      DELETE FROM photos WHERE session_id = ${id};
+      DELETE FROM sessions WHERE id = ${id};
+      COMMIT;`,
+    );
   },
 
   async getPhotos() {
@@ -1009,6 +1039,47 @@ export const sqliteMetadataStore: MetadataStore = {
     const updated: ImageStream = { ...stream, ...changes, updatedAt: new Date().toISOString() };
     await upsertImageStream(updated);
     return updated;
+  },
+
+  async recordStreamActivity(streamId, event, filename) {
+    const db = await getDatabase();
+    // Pre-reading enabled/watch_path for the status derivation is safe — those
+    // fields aren't racing; only the counters are, and they increment atomically
+    // in the UPDATE itself so concurrent events can't lose increments.
+    const rows = await db.select<Array<{ enabled: number; watch_path: string | null }>>(
+      'SELECT enabled, watch_path FROM image_streams WHERE id = $1',
+      [streamId],
+    );
+    if (!rows[0]) return;
+    const status = event === 'failed' ? 'error'
+      : event === 'skipped' ? 'review'
+      : rows[0].enabled === 1 && rows[0].watch_path ? 'watching' : 'idle';
+    const now = new Date().toISOString();
+    await db.execute(
+      `UPDATE image_streams SET
+        total_detected = total_detected + $2,
+        total_imported = total_imported + $3,
+        total_skipped = total_skipped + $4,
+        total_failed = total_failed + $5,
+        last_activity_at = $6,
+        last_detected_filename = COALESCE($7, last_detected_filename),
+        last_imported_filename = COALESCE($8, last_imported_filename),
+        files_per_minute = CASE WHEN $2 = 1 THEN MAX(1, COALESCE(files_per_minute, 0)) ELSE files_per_minute END,
+        status = $9,
+        updated_at = $6
+      WHERE id = $1`,
+      [
+        streamId,
+        event === 'detected' ? 1 : 0,
+        event === 'imported' ? 1 : 0,
+        event === 'skipped' ? 1 : 0,
+        event === 'failed' ? 1 : 0,
+        now,
+        event === 'detected' ? filename : null,
+        event === 'imported' ? filename : null,
+        status,
+      ],
+    );
   },
 
   async deleteImageStream(id) {

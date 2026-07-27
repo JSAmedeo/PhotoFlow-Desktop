@@ -8,7 +8,8 @@ import { useApp } from '../../context/AppContext';
 import type { PhotoVersion } from '../../data/models';
 import { confirmDestructive } from '../../utils/confirm';
 import { isTauriRuntime } from '../../runtime/runtime';
-import { updatePhotoMetadata } from '../../data/repository';
+import { addPhotoVersion, updatePhotoMetadata } from '../../data/repository';
+import { enhancedOutputPath } from '../../ingest/enhancementService';
 
 interface CenterPanelProps {
   visible:        boolean;
@@ -82,6 +83,9 @@ export function CenterPanel({
   const [saving, setSaving] = useState(false);
   const [afterUrlFailed, setAfterUrlFailed] = useState(false);
   const [singleUrlFailed, setSingleUrlFailed] = useState(false);
+  // Render-time cache-buster for the enhanced image after a save. Never persisted
+  // to the DB — displayUrl/afterImageUrl stay clean convertFileSrc URLs.
+  const [saveStamp, setSaveStamp] = useState(0);
 
   // Load versions when photo changes.
   useEffect(() => {
@@ -103,14 +107,20 @@ export function CenterPanel({
   const hasEnhanced = versions.some(v => v.kind === 'enhanced');
   const isProcessing = currentPhoto?.processingStatus === 'processing';
 
+  // Applied at render time only (see saveStamp) so stale webview image cache is
+  // bypassed after an in-place save without polluting the persisted URLs.
+  const withSaveStamp = useCallback((url: string) => (
+    saveStamp ? `${url}${url.includes('?') ? '&' : '?'}t=${saveStamp}` : url
+  ), [saveStamp]);
+
   const beforeUrl = currentPhoto?.beforeImageUrl ?? currentPhoto?.displayUrl ?? '/demo-assets/before.jpg';
   const afterUrl  = currentPhoto?.afterImageUrl  ?? beforeUrl;
-  const effectiveAfterUrl  = afterUrlFailed  ? beforeUrl : afterUrl;
-  const effectiveSingleUrl = singleUrlFailed ? beforeUrl : (currentPhoto?.displayUrl ?? beforeUrl);
+  const effectiveAfterUrl  = afterUrlFailed  ? beforeUrl : withSaveStamp(afterUrl);
+  const effectiveSingleUrl = singleUrlFailed ? beforeUrl : withSaveStamp(currentPhoto?.displayUrl ?? beforeUrl);
 
   // Reset image fallback state when the photo or its URLs change.
   useEffect(() => { setAfterUrlFailed(false); }, [afterUrl]);
-  useEffect(() => { setSingleUrlFailed(false); }, [currentPhoto?.id]);
+  useEffect(() => { setSingleUrlFailed(false); setSaveStamp(0); }, [currentPhoto?.id]);
 
   // Auto-enable compare mode when an enhanced version becomes available.
   useEffect(() => {
@@ -144,22 +154,57 @@ export function CenterPanel({
   const saveAdjustments = useCallback(async () => {
     if (!adjustmentsActive || !currentPhoto?.id || !isTauriRuntime()) return;
     const enhancedVersion = versions.find(v => v.kind === 'enhanced');
-    const storagePath = enhancedVersion?.storagePath ?? currentPhoto?.storagePath;
-    if (!storagePath) return;
+    // Never write to the original file. With an enhanced version, bake in place on
+    // that derived file; without one, read the original and write a new _enhanced
+    // file, then register both version rows so the compare history exists.
+    const inputPath = enhancedVersion?.storagePath ?? currentPhoto?.storagePath;
+    if (!inputPath) return;
+    const outputPath = enhancedVersion?.storagePath ?? enhancedOutputPath(inputPath);
     setSaving(true);
     try {
       const { invoke, convertFileSrc } = await import('@tauri-apps/api/core');
-      await invoke('apply_photo_adjustments', { inputPath: storagePath, brightness, contrast, saturation });
-      const newUrl = convertFileSrc(storagePath) + '?t=' + Date.now();
-      await updatePhotoMetadata(currentPhoto.id, { displayUrl: newUrl, afterImageUrl: newUrl });
+      // Rust may adjust the extension (alpha PNGs stay PNG) — trust the returned path.
+      const writtenPath = await invoke<string>('apply_photo_adjustments', {
+        inputPath, outputPath, brightness, contrast, saturation,
+      });
+      const cleanUrl = convertFileSrc(writtenPath);
+      if (!enhancedVersion) {
+        const now = new Date().toISOString();
+        await addPhotoVersion({
+          id: `pv-${currentPhoto.id}-original`,
+          photoId: currentPhoto.id,
+          kind: 'original',
+          storagePath: inputPath,
+          displayUrl: currentPhoto.beforeImageUrl || currentPhoto.displayUrl,
+          createdAt: now,
+          fileSizeMb: currentPhoto.fileSizeMb,
+        });
+        await addPhotoVersion({
+          id: `pv-${currentPhoto.id}-enhanced`,
+          photoId: currentPhoto.id,
+          kind: 'enhanced',
+          storagePath: writtenPath,
+          displayUrl: cleanUrl,
+          createdAt: now,
+          fileSizeMb: 0,
+        });
+      }
+      await updatePhotoMetadata(currentPhoto.id, {
+        displayUrl: cleanUrl,
+        afterImageUrl: cleanUrl,
+        thumbnailUrl: cleanUrl,
+        activeVersionKind: 'enhanced',
+      });
       await refreshPhotoInPlace(currentPhoto.id);
+      setVersions(await getPhotoVersions(currentPhoto.id));
+      setSaveStamp(Date.now());
       setBrightness(0);
       setContrast(0);
       setSaturation(0);
     } finally {
       setSaving(false);
     }
-  }, [adjustmentsActive, currentPhoto, versions, brightness, contrast, saturation, refreshPhotoInPlace]);
+  }, [adjustmentsActive, currentPhoto, versions, brightness, contrast, saturation, refreshPhotoInPlace, getPhotoVersions]);
 
   useEffect(() => {
     const m = (e: MouseEvent) => { if (draggingRef.current) updateSplit(e); };

@@ -31,14 +31,23 @@ function makeStream(): ImageStream {
 let stream: ImageStream;
 
 const store = {
-  // Returns a snapshot copy, like a real store reading a row.
-  getImageStreamById: vi.fn(async () => ({ ...stream })),
-  // Async write with a small delay so the read-modify-write window is real; without
-  // serialization, concurrent callers would read the same stale counts and lose increments.
-  updateImageStream: vi.fn(async (_id: string, changes: Partial<ImageStream>) => {
+  // Mirrors the browser store's read-modify-write recordStreamActivity, with a small
+  // delay so the read-modify-write window is real; without the repository-level
+  // serialization chain, concurrent callers would read the same stale counts and
+  // lose increments. (The SQLite store increments atomically in SQL instead.)
+  recordStreamActivity: vi.fn(async (_id: string, event: 'detected' | 'imported' | 'skipped' | 'failed', filename: string) => {
+    const snapshot = { ...stream };
     await new Promise(resolve => setTimeout(resolve, 2));
-    stream = { ...stream, ...changes, updatedAt: new Date().toISOString() };
-    return stream;
+    stream = {
+      ...snapshot,
+      lastDetectedFilename: event === 'detected' ? filename : snapshot.lastDetectedFilename,
+      lastImportedFilename: event === 'imported' ? filename : snapshot.lastImportedFilename,
+      totalDetected: snapshot.totalDetected + (event === 'detected' ? 1 : 0),
+      totalImported: snapshot.totalImported + (event === 'imported' ? 1 : 0),
+      totalSkipped: snapshot.totalSkipped + (event === 'skipped' ? 1 : 0),
+      totalFailed: snapshot.totalFailed + (event === 'failed' ? 1 : 0),
+      updatedAt: new Date().toISOString(),
+    };
   }),
 };
 
@@ -55,7 +64,7 @@ describe('recordImageStreamActivity concurrency (Fix 2)', () => {
       Array.from({ length: N }, () => recordImageStreamActivity('stream-1', 'detected', 'x.jpg')),
     );
     expect(stream.totalDetected).toBe(N);
-    expect(store.updateImageStream).toHaveBeenCalledTimes(N);
+    expect(store.recordStreamActivity).toHaveBeenCalledTimes(N);
   });
 
   it('totals each event type independently under a mixed concurrent burst', async () => {

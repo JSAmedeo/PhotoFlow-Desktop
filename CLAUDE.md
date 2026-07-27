@@ -62,6 +62,7 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 | — | Security hardening (pre-Phase 10) | **COMPLETE** |
 | 10 | Auto image enhancement pipeline | **COMPLETE (pending merge)** |
 | 10.5 | Bug fix: concurrency safety, fs-scope hardening, migrations, content de-duplication | **COMPLETE** |
+| 10.5b | Hardening: Rust path validation, PNG alpha, non-destructive workshop saves, bounded enhancement concurrency, atomic SQL, transactional migrations, CSP dev/prod split | **COMPLETE (pending Tauri-mode validation)** — see `docs/phases/PHASE_10.5_HARDENING_ACCEPTANCE_CHECKLIST.md` |
 | 11 | (TBD) | **NEXT** |
 
 ## Security Hardening — Previous Focus (COMPLETE)
@@ -75,10 +76,10 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 - All `window.confirm` and `window.prompt` calls replaced in `GalleryCenter`, `GalleryRight`, `CenterPanel`, and `StreamSetupDialog`.
 - Watcher deletion-event fix in `autoImportPipeline.ts`: a quick `stat()` existence check before adding a queue item swallows spurious FAIL entries caused by the FS watcher re-firing when `remove()` deletes the source file.
 
-**Deferred:**
-- CSP dev/prod split — Tauri v2 has no clean mechanism to separate `ws://localhost:*` from the production CSP without breaking `npm run tauri:dev`.
-- Runtime `fs:scope` injection (Phase 10+ architectural work).
-- Removing `unsafe-inline` from `style-src`.
+**Deferred (first two since resolved in the Phase 10.5 hardening pass):**
+- ~~CSP dev/prod split~~ — DONE: production CSP in `tauri.conf.json` has no localhost entries; `npm run tauri:dev` merges `src-tauri/tauri.conf.dev.json` via `--config` to restore them for Vite HMR.
+- ~~Runtime `fs:scope` injection~~ — DONE: `allow_watch_path` command extends the fs scope per validated watch path at runtime.
+- Removing `unsafe-inline` from `style-src` — still deferred (large refactor).
 
 ## Phase 10 — Previous Focus (COMPLETE, pending merge to main)
 
@@ -101,10 +102,10 @@ Prefer concrete implementation over abstract explanation. Work in small, verifia
 - `CenterPanel.tsx` (Workshop): inline B/C/S toolbar sliders (−50..+50) with real-time CSS filter preview; "Save Changes" button bakes and cache-busts URL; compare slider default = 95%; ENHANCED pane on left, ORIGINAL on right; 1.5 s poll while `processingStatus === 'processing'`.
 - `AppContext.tsx` — `getPhotoVersions`, `refreshPhotoInPlace` actions.
 
-**Deferred from Phase 10:**
-- CSP dev/prod split (Tauri v2 limitation).
-- Runtime `fs:scope` injection.
-- Removing `unsafe-inline` from `style-src`.
+**Deferred from Phase 10 (first two since resolved in the Phase 10.5 hardening pass):**
+- ~~CSP dev/prod split~~ — DONE via `tauri.conf.dev.json` + `--config` merge.
+- ~~Runtime `fs:scope` injection~~ — DONE via `allow_watch_path`.
+- Removing `unsafe-inline` from `style-src` — still deferred.
 
 ## Phase 9 — Previous Focus (COMPLETE)
 

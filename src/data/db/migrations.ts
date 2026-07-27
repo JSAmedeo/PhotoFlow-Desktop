@@ -1,4 +1,4 @@
-import { INITIAL_SCHEMA_SQL } from './schema';
+import { INITIAL_SCHEMA_STATEMENTS } from './schema';
 
 export interface Migration {
   id: number;
@@ -6,18 +6,15 @@ export interface Migration {
   statements: string[];
 }
 
-function splitSqlStatements(sql: string): string[] {
-  return sql
-    .split(';')
-    .map(statement => statement.trim())
-    .filter(Boolean);
-}
-
+// Migrations 1-12 predate the transactional runner and replay under the legacy
+// lenient runner (see database.ts). Migrations 13+ run as a single atomic batch:
+// keep each statement free of string literals containing `;` (the batch is joined
+// on `;` and executed as one multi-statement transaction).
 export const MIGRATIONS: Migration[] = [
   {
     id: 1,
     name: 'initial_metadata_schema',
-    statements: splitSqlStatements(INITIAL_SCHEMA_SQL),
+    statements: INITIAL_SCHEMA_STATEMENTS,
   },
   {
     id: 2,

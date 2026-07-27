@@ -11,6 +11,12 @@ import { waitForStableFile } from './fileStability';
 import { sha256Hex } from './contentHash';
 import * as enhancementService from './enhancementService';
 
+// Files above this are skipped before readFile would load them into memory.
+// No venue camera produces files this large; it guards against a stray video
+// or archive landing in a watch folder.
+const MAX_IMPORT_FILE_MB = 200;
+const MAX_IMPORT_FILE_BYTES = MAX_IMPORT_FILE_MB * 1024 * 1024;
+
 function extensionOf(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot >= 0 ? filename.slice(dot).toLowerCase() : '';
@@ -84,6 +90,19 @@ export async function autoImportWatchedFile(
       error: 'Waiting for file to finish copying.',
     });
     const stable = await waitForStableFile(candidate.path, settleDelayMs);
+
+    if (stable.size > MAX_IMPORT_FILE_BYTES) {
+      await updateImportQueueItem(queueItem.id, {
+        status: 'skipped',
+        progress: 100,
+        fileSize: stable.size,
+        error: `File exceeds the ${MAX_IMPORT_FILE_MB} MB import limit and was skipped.`,
+        completedAt: new Date().toISOString(),
+      });
+      await recordImageStreamActivity(imageStream?.id ?? candidate.imageStreamId, 'skipped', candidate.filename);
+      return 'skipped';
+    }
+
     await updateImportQueueItem(queueItem.id, {
       status: 'importing',
       progress: 25,

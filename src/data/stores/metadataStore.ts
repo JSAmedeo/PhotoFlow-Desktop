@@ -47,6 +47,14 @@ export interface MetadataStore {
   getImageStreamById(id: string): Promise<ImageStream | undefined>;
   addImageStream(stream: ImageStream): Promise<ImageStream>;
   updateImageStream(id: string, changes: Partial<ImageStream>): Promise<ImageStream | undefined>;
+  // Increments the counter for one activity event. The SQLite implementation is a
+  // single atomic UPDATE (total_x = total_x + 1) so concurrent imports can't lose
+  // increments; the browser implementation is a plain read-modify-write.
+  recordStreamActivity(
+    streamId: string,
+    event: 'detected' | 'imported' | 'skipped' | 'failed',
+    filename: string,
+  ): Promise<void>;
   deleteImageStream(id: string): Promise<void>;
   getHours(): Promise<HourBucket[]>;
   getSelectedSessionId(): Promise<string>;

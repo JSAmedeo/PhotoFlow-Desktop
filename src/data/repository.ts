@@ -275,11 +275,10 @@ export async function deleteImageStream(id: string): Promise<void> {
   await (await getMetadataStore()).deleteImageStream(id);
 }
 
-// Serializes all stream-activity writes through a single tail-promise chain. The
-// read-modify-write below (read counts, +1, write) interleaves under the concurrent
-// fire-and-forget imports the watcher fires, dropping increments. Chaining every call
-// applies them one at a time regardless of caller concurrency. A store-level atomic
-// `UPDATE … SET total_detected = total_detected + 1` is a future improvement.
+// Counter increments happen atomically inside the store (SQLite: a single
+// `UPDATE … SET total_x = total_x + 1`). The tail-promise chain is kept as cheap
+// insurance for the browser store's read-modify-write and to keep event ordering
+// (status, last-filename) deterministic under concurrent fire-and-forget imports.
 let streamActivityChain: Promise<void> = Promise.resolve();
 
 export function recordImageStreamActivity(
@@ -287,35 +286,15 @@ export function recordImageStreamActivity(
   event: 'detected' | 'imported' | 'skipped' | 'failed',
   filename: string,
 ): Promise<void> {
-  const run = streamActivityChain.then(() => applyStreamActivity(streamId, event, filename));
+  const run = streamActivityChain.then(async () => {
+    if (!streamId) return;
+    const store = await getMetadataStore();
+    await store.recordStreamActivity(streamId, event, filename);
+  });
   // Keep the chain alive even if one application rejects, so a single failure doesn't
   // wedge all later increments.
   streamActivityChain = run.catch(() => {});
   return run;
-}
-
-async function applyStreamActivity(
-  streamId: string | undefined,
-  event: 'detected' | 'imported' | 'skipped' | 'failed',
-  filename: string,
-): Promise<void> {
-  if (!streamId) return;
-  const store = await getMetadataStore();
-  const stream = await store.getImageStreamById(streamId);
-  if (!stream) return;
-
-  const now = new Date().toISOString();
-  await store.updateImageStream(streamId, {
-    status: event === 'failed' ? 'error' : event === 'skipped' ? 'review' : stream.enabled && stream.watchPath ? 'watching' : 'idle',
-    lastActivityAt: now,
-    lastDetectedFilename: event === 'detected' ? filename : stream.lastDetectedFilename,
-    lastImportedFilename: event === 'imported' ? filename : stream.lastImportedFilename,
-    totalDetected: stream.totalDetected + (event === 'detected' ? 1 : 0),
-    totalImported: stream.totalImported + (event === 'imported' ? 1 : 0),
-    totalSkipped: stream.totalSkipped + (event === 'skipped' ? 1 : 0),
-    totalFailed: stream.totalFailed + (event === 'failed' ? 1 : 0),
-    filesPerMinute: event === 'detected' ? Math.max(1, stream.filesPerMinute ?? 0) : stream.filesPerMinute,
-  });
 }
 
 export async function clearCompletedImports(): Promise<void> {

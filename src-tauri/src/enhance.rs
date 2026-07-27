@@ -1,4 +1,4 @@
-use image::{DynamicImage, ImageBuffer, RgbImage};
+use image::{DynamicImage, ImageBuffer, RgbImage, RgbaImage};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -19,22 +19,16 @@ fn read_exif_orientation(path: &str) -> u32 {
         .unwrap_or(1)
 }
 
+// Uses DynamicImage's own transforms so the pixel format (including alpha) survives.
 fn apply_exif_orientation(img: DynamicImage, orientation: u32) -> DynamicImage {
-    use image::imageops;
     match orientation {
-        2 => DynamicImage::ImageRgb8(imageops::flip_horizontal(&img.to_rgb8())),
-        3 => DynamicImage::ImageRgb8(imageops::rotate180(&img.to_rgb8())),
-        4 => DynamicImage::ImageRgb8(imageops::flip_vertical(&img.to_rgb8())),
-        5 => {
-            let rotated = imageops::rotate90(&img.to_rgb8());
-            DynamicImage::ImageRgb8(imageops::flip_horizontal(&rotated))
-        }
-        6 => DynamicImage::ImageRgb8(imageops::rotate90(&img.to_rgb8())),
-        7 => {
-            let rotated = imageops::rotate270(&img.to_rgb8());
-            DynamicImage::ImageRgb8(imageops::flip_horizontal(&rotated))
-        }
-        8 => DynamicImage::ImageRgb8(imageops::rotate270(&img.to_rgb8())),
+        2 => img.fliph(),
+        3 => img.rotate180(),
+        4 => img.flipv(),
+        5 => img.rotate90().fliph(),
+        6 => img.rotate90(),
+        7 => img.rotate270().fliph(),
+        8 => img.rotate270(),
         _ => img,
     }
 }
@@ -121,6 +115,76 @@ fn apply_brightness_contrast(img: RgbImage, brightness: f32, contrast: f32) -> R
         }
     });
     ImageBuffer::from_raw(width, height, out).expect("tonal buffer size unchanged")
+}
+
+// ── RGBA (alpha-preserving) variants ─────────────────────────────────────────
+// Pointwise color ops run on the straight (non-premultiplied) RGB channels of each
+// RGBA pixel; alpha is never touched. Used for background-removed cutout PNGs where
+// flattening to RGB/JPEG would destroy transparency.
+
+fn adjust_rgba_in_place(data: &mut [u8], brightness: f32, contrast: f32, saturation: f32) {
+    let do_tonal = brightness.abs() >= 0.001 || contrast.abs() >= 0.001;
+    let do_sat = (saturation - 1.0).abs() > 0.001;
+    if !do_tonal && !do_sat {
+        return;
+    }
+    let b_add = brightness * 255.0;
+    let c_factor = 1.0 + contrast;
+    data.par_chunks_mut(4).for_each(|px| {
+        if do_tonal {
+            for ch in px[..3].iter_mut() {
+                let v = *ch as f32;
+                *ch = ((v - 128.0) * c_factor + 128.0 + b_add).clamp(0.0, 255.0) as u8;
+            }
+        }
+        if do_sat {
+            let r = px[0] as f32 / 255.0;
+            let g = px[1] as f32 / 255.0;
+            let b = px[2] as f32 / 255.0;
+            let (h, s, v) = rgb_to_hsv(r, g, b);
+            let (nr, ng, nb) = hsv_to_rgb(h, (s * saturation).min(1.0), v);
+            px[0] = (nr * 255.0).clamp(0.0, 255.0) as u8;
+            px[1] = (ng * 255.0).clamp(0.0, 255.0) as u8;
+            px[2] = (nb * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    });
+}
+
+// Unsharp for RGBA runs on PREMULTIPLIED color so the blur can't bleed the arbitrary
+// RGB values of fully-transparent pixels (typically black) into visible edges. The
+// sharpened premultiplied result is un-premultiplied back into straight color; fully
+// transparent pixels are left untouched.
+fn unsharp_mask_rgba(rgba: &mut RgbaImage, sigma: f32, amount: f32) {
+    let (width, height) = rgba.dimensions();
+    let (w, h) = (width as usize, height as usize);
+
+    let src = rgba.as_raw();
+    let mut premult = vec![0u8; w * h * 3];
+    premult.par_chunks_mut(3).enumerate().for_each(|(i, out)| {
+        let px = &src[i * 4..i * 4 + 4];
+        let a = px[3] as f32 / 255.0;
+        out[0] = (px[0] as f32 * a).round() as u8;
+        out[1] = (px[1] as f32 * a).round() as u8;
+        out[2] = (px[2] as f32 * a).round() as u8;
+    });
+
+    let kernel = gaussian_kernel(sigma);
+    let h_pass = blur_horizontal(&premult, w, h, &kernel);
+    let blurred = blur_vertical(&h_pass, w, h, &kernel);
+
+    let data: &mut [u8] = &mut **rgba;
+    data.par_chunks_mut(4).enumerate().for_each(|(i, px)| {
+        let a = px[3] as f32;
+        if a == 0.0 {
+            return;
+        }
+        for c in 0..3 {
+            let o = premult[i * 3 + c] as f32;
+            let b = blurred[i * 3 + c] as f32;
+            let sharpened_premult = (o + amount * (o - b)).clamp(0.0, 255.0);
+            px[c] = (sharpened_premult * 255.0 / a).clamp(0.0, 255.0) as u8;
+        }
+    });
 }
 
 // ── Step 2: Gentle unsharp mask (parallel separable gaussian blur) ───────────
@@ -211,7 +275,26 @@ fn unsharp_mask(img: RgbImage, sigma: f32, amount: f32) -> RgbImage {
     ImageBuffer::from_raw(width, height, sharpened).expect("unsharp buffer size unchanged")
 }
 
-// ── Public entry point ────────────────────────────────────────────────────────
+// ── Encoding helpers ──────────────────────────────────────────────────────────
+
+fn encode_jpeg_q92(rgb: RgbImage, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let dyn_img = DynamicImage::ImageRgb8(rgb);
+    let mut out_file = std::fs::File::create(output_path)?;
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out_file, 92);
+    encoder.encode_image(&dyn_img)?;
+    Ok(())
+}
+
+// Alpha output must stay PNG regardless of what extension the caller guessed —
+// callers are told to trust the returned path.
+fn with_png_extension(output_path: &str) -> String {
+    Path::new(output_path)
+        .with_extension("png")
+        .to_string_lossy()
+        .to_string()
+}
+
+// ── Public entry points ───────────────────────────────────────────────────────
 
 pub fn enhance_image(
     input_path: &str,
@@ -233,6 +316,21 @@ pub fn enhance_image(
     let orientation = read_exif_orientation(input_path);
     let img = image::open(input_path)?;
     let img = apply_exif_orientation(img, orientation);
+
+    // Alpha path: background-removed cutouts and other transparent PNGs keep their
+    // alpha channel and are re-encoded as PNG. Flattening them to RGB/JPEG would
+    // fill transparent regions with black.
+    if img.color().has_alpha() {
+        let mut rgba = img.to_rgba8();
+        adjust_rgba_in_place(&mut rgba, brightness, contrast, saturation);
+        if sharpen > 0.001 {
+            unsharp_mask_rgba(&mut rgba, 1.0, sharpen);
+        }
+        let actual_output = with_png_extension(output_path);
+        DynamicImage::ImageRgba8(rgba).save_with_format(&actual_output, image::ImageFormat::Png)?;
+        return Ok(actual_output);
+    }
+
     let rgb = img.to_rgb8();
 
     // Step 1: brightness + contrast.
@@ -253,17 +351,17 @@ pub fn enhance_image(
     };
 
     // Encode at JPEG quality 92.
-    let dyn_img = DynamicImage::ImageRgb8(rgb);
-    let mut out_file = std::fs::File::create(output_path)?;
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out_file, 92);
-    encoder.encode_image(&dyn_img)?;
+    encode_jpeg_q92(rgb, output_path)?;
 
     Ok(output_path.to_string())
 }
 
-/// Bake workshop slider adjustments into an existing image file.
+/// Bake workshop slider adjustments into an image file.
 /// brightness/contrast/saturation are in the same -50..+50 range as the UI sliders
-/// (divided by 100 internally). Output overwrites input when paths are identical.
+/// (divided by 100 internally). Output overwrites input when paths are identical —
+/// callers only do that for derived (enhanced) files, never the original.
+/// Note: repeated saves onto the same JPEG recompress at q92 each time; acceptable
+/// generation loss for this pass (a full adjustment-layer system is out of scope).
 pub fn apply_adjustments(
     input_path: &str,
     output_path: &str,
@@ -271,21 +369,34 @@ pub fn apply_adjustments(
     contrast: f32,
     saturation: f32,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    // Bake EXIF orientation exactly as enhance_image does — re-encoding strips the
+    // EXIF tag, so skipping this would leave orientation-6/8 camera JPEGs sideways.
+    let orientation = read_exif_orientation(input_path);
     let img = image::open(input_path)?;
-    let rgb = img.to_rgb8();
+    let img = apply_exif_orientation(img, orientation);
 
-    let rgb = apply_brightness_contrast(rgb, brightness / 100.0, contrast / 100.0);
+    let brightness = brightness / 100.0;
+    let contrast = contrast / 100.0;
     let sat_factor = 1.0 + saturation / 100.0;
+
+    // Alpha path mirrors enhance_image: keep transparency, encode PNG.
+    if img.color().has_alpha() {
+        let mut rgba = img.to_rgba8();
+        adjust_rgba_in_place(&mut rgba, brightness, contrast, sat_factor);
+        let actual_output = with_png_extension(output_path);
+        DynamicImage::ImageRgba8(rgba).save_with_format(&actual_output, image::ImageFormat::Png)?;
+        return Ok(actual_output);
+    }
+
+    let rgb = img.to_rgb8();
+    let rgb = apply_brightness_contrast(rgb, brightness, contrast);
     let rgb = if (sat_factor - 1.0).abs() > 0.001 {
         saturation_boost_by(rgb, sat_factor)
     } else {
         rgb
     };
 
-    let dyn_img = DynamicImage::ImageRgb8(rgb);
-    let mut out_file = std::fs::File::create(output_path)?;
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out_file, 92);
-    encoder.encode_image(&dyn_img)?;
+    encode_jpeg_q92(rgb, output_path)?;
 
     Ok(output_path.to_string())
 }

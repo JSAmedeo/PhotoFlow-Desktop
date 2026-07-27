@@ -266,6 +266,26 @@ export const browserMetadataStore: MetadataStore = {
     return updated;
   },
 
+  async recordStreamActivity(streamId, event, filename) {
+    // Browser mode is a single JS context and localStorage is synchronous, so a
+    // read-modify-write here matches the SQLite store's atomic UPDATE semantics.
+    const stream = await this.getImageStreamById(streamId);
+    if (!stream) return;
+    await this.updateImageStream(streamId, {
+      status: event === 'failed' ? 'error'
+        : event === 'skipped' ? 'review'
+        : stream.enabled && stream.watchPath ? 'watching' : 'idle',
+      lastActivityAt: new Date().toISOString(),
+      lastDetectedFilename: event === 'detected' ? filename : stream.lastDetectedFilename,
+      lastImportedFilename: event === 'imported' ? filename : stream.lastImportedFilename,
+      totalDetected: stream.totalDetected + (event === 'detected' ? 1 : 0),
+      totalImported: stream.totalImported + (event === 'imported' ? 1 : 0),
+      totalSkipped: stream.totalSkipped + (event === 'skipped' ? 1 : 0),
+      totalFailed: stream.totalFailed + (event === 'failed' ? 1 : 0),
+      filesPerMinute: event === 'detected' ? Math.max(1, stream.filesPerMinute ?? 0) : stream.filesPerMinute,
+    });
+  },
+
   async deleteImageStream(id) {
     storeSet(STORE_KEYS.imageStreams, (await this.getImageStreams()).filter(stream => stream.id !== id));
   },
